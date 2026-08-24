@@ -90,10 +90,21 @@ button:disabled{opacity:.45;cursor:not-allowed}
   text-transform:uppercase;color:var(--muted);margin-top:3px}
 .rail-client{padding:13px 14px;background:var(--sunk);border-radius:var(--radius)}
 .rail-client .nm{font-family:var(--font-display);font-weight:700;font-size:14px;margin-top:3px}
-/* Their mark is a dark disc on a white JPEG. Clipping to a circle drops the
-   white corners, and the hairline ring keeps it off the near-matching ground. */
-.rail-client img{width:58px;height:58px;border-radius:50%;display:block;
-  margin:0 0 12px;box-shadow:0 0 0 1px var(--line)}
+/* Logo presentation is theme-driven, because clients hand over wildly
+   different assets. A dark circular badge needs clipping and a ring; a black
+   wordmark on transparency needs a light backdrop or it vanishes on a dark
+   ground. Both are config, not code:
+     logoRadius   '50%' for a badge, '4px' for a wordmark
+     logoBackdrop '#FFFFFF' when the mark is dark on transparency
+     logoWidth    e.g. '120px' for a wide wordmark */
+.rail-client img{
+  width:var(--logo-width,58px);height:var(--logo-height,58px);
+  object-fit:contain;display:block;margin:0 0 12px;
+  border-radius:var(--logo-radius,50%);
+  background:var(--logo-backdrop,transparent);
+  padding:var(--logo-pad,0);
+  box-shadow:0 0 0 1px var(--logo-ring,transparent);
+}
 nav{display:flex;flex-direction:column;gap:1px}
 .nav-h{font-family:var(--font-mono);font-size:10px;letter-spacing:.12em;
   text-transform:uppercase;color:var(--muted);margin:0 0 9px 12px}
@@ -231,9 +242,7 @@ main{overflow-y:auto}
       <div class="nm" id="client-name">—</div>
     </div>
 
-    <nav id="nav" aria-label="Sections">
-      <p class="nav-h">Intelligence</p>
-    </nav>
+    <nav id="nav" aria-label="Sections"></nav>
 
     <div class="rail-foot">
       <p class="eyebrow" id="who">—</p>
@@ -316,6 +325,9 @@ function applyTheme(theme){
     ground:'--ground', surface:'--surface', sunk:'--sunk', ink:'--ink',
     muted:'--muted', line:'--line', birch:'--birch', accent:'--accent',
     accentSoft:'--accent-soft', ok:'--ok', wait:'--wait',
+    logoRadius:'--logo-radius', logoBackdrop:'--logo-backdrop',
+    logoWidth:'--logo-width', logoHeight:'--logo-height', logoPad:'--logo-pad',
+    logoRing:'--logo-ring',
     fontDisplay:'--font-display', fontBody:'--font-body',
     fontMono:'--font-mono', radius:'--radius',
   };
@@ -394,12 +406,24 @@ async function boot(){
 function render(client, session, compCount, latest){
   $('#login').style.display = 'none';
   $('#app').classList.add('on');
+  /* boot() runs on page load AND again when Supabase fires SIGNED_IN after the
+     magic-link redirect. Rebuild these from empty every time so a second pass
+     replaces the interface instead of appending a second copy of it. */
+  $('#nav').innerHTML = '<p class="nav-h">Intelligence</p>';
+  $('#panels').innerHTML = '';
   $('#client-name').textContent = client.name;
   $('#who').textContent = session.user.email;
 
   const logo = client.theme && client.theme.logoUrl;
-  if(logo) $('#client-logo').innerHTML =
-    `<img src="${esc(logo)}" alt="${esc(client.name)}" style="margin-top:8px">`;
+  $('#client-logo').innerHTML = '';
+  if(logo){
+    const img = new Image();
+    img.alt = client.name;
+    /* A missing logo should look like no logo, not like a broken page. */
+    img.onerror = () => { $('#client-logo').innerHTML = ''; };
+    img.src = logo;
+    $('#client-logo').appendChild(img);
+  }
 
   const cfg = client.config || {};
   const startsRaw = cfg.first_briefing_at || null;
