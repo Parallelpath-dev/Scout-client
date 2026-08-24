@@ -1,0 +1,34 @@
+# ─────────────────────────────────────────────────────────────────────────
+# This repo is public and GitHub Pages serves every file in it. Anything
+# listed here is something that must never reach that URL.
+# ─────────────────────────────────────────────────────────────────────────
+
+# Client contact details. Run these in the Supabase SQL editor instead.
+authorize-users.sql
+*-users.sql
+*.local.sql
+
+# Credentials of any kind. The publishable key in index.html is fine and
+# intentional; nothing else is.
+.env
+.env.*
+*.pem
+*.key
+service-key*
+
+# Local previews and screenshots
+preview-*.html
+shot-*.png
+*.local.html
+
+# OS and editor noise
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+*.swp
+
+# Tooling
+__pycache__/
+*.pyc
+node_modules/

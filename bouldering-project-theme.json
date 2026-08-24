@@ -1,0 +1,43 @@
+{
+  "_note": "Goes into public.clients.theme for slug 'bouldering-project'. Every value except the four marked DERIVED was measured off boulderingproject.com on 2026-08-24. Changing any of these is a config update — no code change, no redeploy.",
+
+  "ground": "#3D3935",
+  "surface": "#4A4540",
+  "sunk": "#332F2C",
+  "ink": "#FFFFFF",
+  "muted": "#97A2BA",
+  "line": "rgba(255,255,255,0.13)",
+  "birch": "#97A2BA",
+  "accent": "#D65F52",
+  "accentSoft": "rgba(214,95,82,0.14)",
+  "ok": "#97A2BA",
+  "wait": "#D65F52",
+
+  "fontDisplay": "'Archivo', 'Good Pro', system-ui, sans-serif",
+  "fontBody": "'Archivo', 'Good Pro', system-ui, sans-serif",
+  "fontMono": "'Archivo', system-ui, sans-serif",
+  "fontImport": null,
+
+  "logoUrl": "assets/bp-logo.jpg",
+
+  "_provenance": {
+    "measured": {
+      "#3D3935": "dominant page background AND dominant text color — 2,644,331px² of background coverage. Their signature warm dark.",
+      "#97A2BA": "secondary surface, 142,000px². Cool blue-grey. Used here as muted text and as the 'settled' state color.",
+      "#D65F52": "the real accent. Low area (11,737px²) but present across background, text, AND border — the signature of an emphasis color, not a surface. The extractor's frequency heuristic mislabeled #97A2BA as the accent; this is the correction.",
+      "#4E5569": "measured but NOT used — a third cool grey that muddies the palette against the warm ground. Dropped deliberately.",
+      "#FFFFFF": "text and borders on the dark ground."
+    },
+    "derived": {
+      "surface": "#4A4540 — a lift off #3D3935. Their site has no card surface to measure because it isn't a dashboard.",
+      "sunk": "#332F2C — a recess below the ground, same reason.",
+      "line": "White at 13%. Their hairlines are solid white, which is too loud at dashboard density.",
+      "accentSoft": "The accent at 14%, for active navigation."
+    },
+    "substitutions": {
+      "typeface": "Their site runs FF Good Pro across every role, self-hosted with no Google Fonts link. It is a licensed webfont — serving it from our domain would breach the license and likely fail referrer checks. Archivo is the substitute: a grotesque built for condensed uppercase display work and the closest free match to Good Pro's character. 'Good Pro' stays first in the stack so it renders correctly the moment a licensed kit is installed.",
+      "case": "Their site sets text-transform:uppercase on h1, h2, AND body. Adopted for labels, navigation, eyebrows, and state chips — dropped for body copy. Uppercase running text at dashboard density is hard to read, and their CEO reads this weekly.",
+      "logo": "Left null on purpose. Their logo files (logo--black.svg, logo-footer.svg) live on their WordPress server; hotlinking is fragile, and the black variant is invisible on the dark ground. Until they send an asset we host ourselves, the wordmark renders as type — which matches their brand, since their logo IS a wordmark."
+    }
+  }
+}
