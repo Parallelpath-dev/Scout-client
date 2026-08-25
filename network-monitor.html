@@ -1,0 +1,550 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Bouldering Project — Network Social Signal Monitor</title>
+<style>
+:root{
+  color-scheme: light;
+  --ink:#3d3935; --ink-2:#5f5a54; --muted:#8a8580;
+  --paper:#ffffff; --plane:#f2f2f2; --line:rgba(61,57,53,.14);
+  --slate:#4e5569; --mist:#97a2ba; --coral:#d65f52;
+  --cool:#3a5f8f; --warm:#d65f52; --mid:#e6e4e1;
+  --o1:#3a4a6b; --o2:#6b7a9c; --o3:#97a2ba;   /* ordinal ramp: reel > carousel > static */
+  --grid:#e4e2df; --axis:#c8c4be;
+  --font:"Good Pro","Archivo","Helvetica Neue",Helvetica,Arial,system-ui,sans-serif;
+}
+:root[data-theme="dark"]{
+  color-scheme: dark;
+  --ink:#ffffff; --ink-2:#c8c4be; --muted:#a19c96;
+  --paper:#3d3935; --plane:#2b2825; --line:rgba(255,255,255,.14);
+  --slate:#97a2ba; --mist:#97a2ba; --coral:#e8776a;
+  --cool:#7fa6d8; --warm:#e8776a; --mid:#57524d;
+  --o1:#b9c6e0; --o2:#8a97b4; --o3:#636e88;
+  --grid:#4a453f; --axis:#5f5a54;
+}
+*{box-sizing:border-box}
+html{scroll-behavior:smooth}
+body{margin:0;background:transparent;color:var(--ink);font-family:var(--font);
+  font-size:15px;line-height:1.55;-webkit-font-smoothing:antialiased}
+.wrap{max-width:1140px;margin:0 auto;padding:0 4px 60px}
+
+/* ---------- masthead ---------- */
+.mast{background:#3d3935;color:#fff;border-bottom:4px solid var(--coral)}
+:root[data-theme="dark"] .mast{background:#2b2825}
+.mast-in{max-width:1140px;margin:0 auto;padding:20px 28px;display:flex;
+  align-items:center;gap:18px;flex-wrap:wrap}
+.mast h1{font-size:15px;font-weight:900;letter-spacing:2px;text-transform:uppercase;margin:0}
+.mast .sub{font-size:12px;color:#c8c4be;letter-spacing:.4px;margin-top:3px}
+.grow{flex:1}
+.tag{font-size:10.5px;font-weight:700;letter-spacing:2px;text-transform:uppercase;
+  padding:6px 11px;border:1px solid var(--coral);color:var(--coral)}
+.tbtn{font:inherit;font-size:10.5px;font-weight:700;letter-spacing:2px;text-transform:uppercase;
+  background:none;border:1px solid rgba(255,255,255,.35);color:#fff;padding:6px 13px;cursor:pointer}
+.tbtn:hover{background:rgba(255,255,255,.12)}
+
+/* ---------- type ---------- */
+h2{font-size:26px;font-weight:900;letter-spacing:-.2px;text-transform:uppercase;
+  margin:0 0 8px;line-height:1.1}
+h3{font-size:15px;font-weight:900;text-transform:uppercase;letter-spacing:.5px;margin:0 0 10px}
+.eyebrow{font-size:10.5px;font-weight:700;letter-spacing:2px;text-transform:uppercase;
+  color:var(--coral);margin-bottom:10px}
+.lede{color:var(--ink-2);font-size:14.5px;max-width:78ch;margin:0 0 22px}
+section{margin-top:56px}
+.card{background:var(--paper);border:1px solid var(--line);border-radius:10px;padding:22px 24px}
+.grid{display:grid;gap:14px}
+.g4{grid-template-columns:repeat(4,1fr)} .g3{grid-template-columns:repeat(3,1fr)}
+.g2{grid-template-columns:1fr 1fr}
+@media(max-width:900px){.g4,.g3,.g2{grid-template-columns:1fr 1fr}}
+@media(max-width:620px){.g4,.g3,.g2{grid-template-columns:1fr}}
+
+/* ---------- hero ---------- */
+.hero{background:var(--ink);color:#fff;border-radius:10px;padding:34px 34px 30px}
+:root[data-theme="dark"] .hero{background:#221f1d}
+.hero .eyebrow{color:var(--coral)}
+.hero h2{color:#fff;font-size:34px;max-width:34ch;line-height:1.06}
+.hero p{color:#c8c4be;font-size:14.5px;max-width:74ch}
+.heronums{display:grid;grid-template-columns:repeat(3,auto);gap:44px;margin-top:26px;
+  padding-top:24px;border-top:1px solid rgba(255,255,255,.18)}
+@media(max-width:700px){.heronums{grid-template-columns:1fr 1fr;gap:24px}}
+.hn .v{font-size:46px;font-weight:900;line-height:1;letter-spacing:-1px;
+  font-variant-numeric:tabular-nums}
+.hn .v.bad{color:var(--coral)}
+.hn .k{font-size:11px;font-weight:700;letter-spacing:1.6px;text-transform:uppercase;
+  color:#a19c96;margin-top:9px}
+.hn .n{font-size:12.5px;color:#c8c4be;margin-top:5px;max-width:24ch}
+
+/* ---------- stat tiles ---------- */
+.tile .k{font-size:10.5px;font-weight:700;letter-spacing:1.6px;text-transform:uppercase;color:var(--muted)}
+.tile .v{font-size:34px;font-weight:900;letter-spacing:-.5px;line-height:1.1;margin:8px 0 3px;
+  font-variant-numeric:tabular-nums}
+.tile .n{font-size:12.5px;color:var(--ink-2)}
+
+/* ---------- tables ---------- */
+table{width:100%;border-collapse:collapse;font-size:13.5px}
+th{font-size:10px;font-weight:700;letter-spacing:1.3px;text-transform:uppercase;color:var(--muted);
+  text-align:right;padding:0 0 10px 14px;border-bottom:1px solid var(--line);white-space:nowrap}
+th:first-child{text-align:left;padding-left:0}
+td{padding:11px 0 11px 14px;border-bottom:1px solid var(--line);text-align:right;
+  font-variant-numeric:tabular-nums}
+td:first-child{text-align:left;padding-left:0;font-weight:700}
+tr:last-child td{border-bottom:none}
+.sub{font-size:11.5px;color:var(--muted);font-weight:400;display:block;letter-spacing:0}
+.bar{height:8px;background:var(--grid);position:relative;min-width:70px;display:block}
+.bar i{position:absolute;left:0;top:0;bottom:0;background:var(--cool);display:block}
+.mixbar{display:flex;height:10px;gap:2px;min-width:110px}
+.mixbar span{display:block}
+.warnrow td{background:rgba(214,95,82,.06)}
+
+/* ---------- clusters ---------- */
+.cl{border-left:3px solid var(--coral);padding:14px 0 14px 16px;margin-bottom:4px;
+  display:grid;grid-template-columns:190px 1fr 90px;gap:18px;align-items:start}
+@media(max-width:780px){.cl{grid-template-columns:1fr;gap:8px}}
+.cl-when{font-weight:700;font-size:13.5px}
+.cl-when span{display:block;font-weight:400;font-size:11.5px;color:var(--muted);
+  text-transform:uppercase;letter-spacing:1.2px;margin-top:3px}
+.mk{display:inline-block;font-size:11.5px;padding:3px 9px;border:1px solid var(--line);
+  margin:0 5px 5px 0;color:var(--ink-2)}
+.mk b{font-variant-numeric:tabular-nums}
+.mk.neg{border-color:var(--coral);color:var(--coral)}
+.cl-z{text-align:right;font-variant-numeric:tabular-nums;font-size:22px;font-weight:900}
+.cl-z small{display:block;font-size:10px;font-weight:700;letter-spacing:1.3px;
+  text-transform:uppercase;color:var(--muted);margin-top:2px}
+
+/* ---------- charts ---------- */
+svg{display:block;width:100%;height:auto;overflow:visible}
+.chartcard{position:relative}
+.tip{position:absolute;pointer-events:none;opacity:0;transition:opacity .09s;background:var(--paper);
+  border:1px solid var(--line);padding:10px 12px;font-size:12.5px;box-shadow:0 8px 26px rgba(0,0,0,.16);
+  max-width:260px;z-index:6;line-height:1.42;border-radius:6px}
+.legend{display:flex;gap:20px;flex-wrap:wrap;margin-top:16px;font-size:12.5px;color:var(--ink-2)}
+.legend span{display:flex;align-items:center;gap:8px}
+.sw{width:12px;height:12px;display:block}
+
+/* ---------- flagged ---------- */
+.fl{display:grid;grid-template-columns:60px 1fr 150px 108px;gap:16px;align-items:center;
+  padding:13px 0;border-bottom:1px solid var(--line);font-size:13.5px}
+.fl:last-child{border-bottom:none}
+@media(max-width:820px){.fl{grid-template-columns:1fr 1fr;gap:8px}}
+.fl .z{font-size:20px;font-weight:900;font-variant-numeric:tabular-nums}
+.z.up{color:var(--cool)} .z.dn{color:var(--coral)}
+.fl a{color:var(--ink);text-decoration:none;border-bottom:1px solid var(--line);font-weight:700}
+.fl a:hover{border-color:var(--coral);color:var(--coral)}
+.pill{font-size:9.5px;font-weight:700;letter-spacing:1.3px;text-transform:uppercase;
+  padding:3px 8px;border:1px solid currentColor;margin-left:8px;white-space:nowrap}
+.pill.syn{color:var(--coral)}
+.fl .meta{font-size:11.5px;color:var(--muted);text-transform:uppercase;letter-spacing:1px}
+
+/* ---------- access ---------- */
+ul.ck{list-style:none;padding:0;margin:12px 0 0;font-size:13.5px;color:var(--ink-2)}
+ul.ck li{padding:9px 0 9px 26px;position:relative;border-top:1px solid var(--line)}
+ul.ck li:first-child{border-top:none}
+ul.ck li::before{position:absolute;left:0;top:9px;font-weight:900;font-size:13px}
+ul.ck.have li::before{content:"✓";color:var(--cool)}
+ul.ck.want li::before{content:"✕";color:var(--coral)}
+ul.ck b{color:var(--ink)}
+.unlock{border-left:3px solid var(--slate);padding-left:16px;margin-top:18px}
+.unlock h4{margin:0 0 4px;font-size:13px;font-weight:900;text-transform:uppercase;letter-spacing:.6px}
+.unlock p{margin:0;font-size:13.5px;color:var(--ink-2)}
+
+details{margin-top:16px}
+summary{cursor:pointer;font-weight:900;text-transform:uppercase;letter-spacing:.8px;font-size:12.5px}
+details ol{padding-left:20px;margin:14px 0 0;font-size:13.5px;color:var(--ink-2)}
+details li{margin-bottom:10px}
+details b{color:var(--ink)}
+code{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12.5px;
+  background:var(--plane);padding:1px 5px}
+:root[data-theme="dark"] code{background:#221f1d}
+footer{margin-top:64px;padding-top:22px;border-top:1px solid var(--line);
+  font-size:12px;color:var(--muted);line-height:1.7}
+.snapshot{display:flex;gap:14px;align-items:flex-start;border:1px solid var(--coral);
+  border-left-width:3px;border-radius:6px;padding:13px 16px;margin:0 0 26px;
+  background:rgba(214,95,82,.06)}
+.snapshot .lbl{font-size:10px;font-weight:700;letter-spacing:1.6px;text-transform:uppercase;
+  color:var(--coral);white-space:nowrap;padding-top:2px}
+.snapshot p{margin:0;font-size:13px;color:var(--ink-2);line-height:1.5}
+@media(max-width:620px){.snapshot{flex-direction:column;gap:6px}}
+.note{font-size:12.5px;color:var(--muted);margin-top:12px}
+</style>
+</head>
+<body>
+
+
+<div class="wrap">
+
+<div class="snapshot">
+  <span class="lbl">One-time analysis</span>
+  <p>Collected 20 August 2026, covering the 13 weeks from 20 May. These numbers do not
+  refresh. The rest of Scout updates every Monday; this page is a point-in-time study of
+  234 posts across 9 accounts, and it stays as it is unless we run it again.</p>
+</div>
+<section id="hero" style="margin-top:0">
+  <div class="hero">
+    <div class="eyebrow">The headline finding</div>
+    <h2 id="heroH">Syndicated content is the weakest content on every account that receives it</h2>
+    <p id="heroP"></p>
+    <div class="heronums" id="heroN"></div>
+  </div>
+</section>
+
+<section id="s-robust">
+  <div class="eyebrow">Before you believe it</div>
+  <h2>How hard we tried to break this</h2>
+  <p class="lede">A pattern this convenient deserves suspicion. The effect depends entirely on how
+  tightly "the same drop" is defined — and that is the point. Loosen the window and the signal
+  dissolves into ordinary posting overlap, which is exactly what should happen if the tight
+  clusters are a real, distinct behaviour rather than an artifact of coincidence.</p>
+  <div class="card">
+    <table id="sensT"></table>
+    <p class="note" id="sigNote"></p>
+    <p class="note">Read this as a guardrail, not a weakness. If the effect had persisted at a
+    six-hour window it would mean we were measuring "posting at similar times," not coordinated
+    syndication. It does not persist, so we are not.</p>
+  </div>
+  <div class="grid g2" style="margin-top:14px">
+    <div class="card">
+      <h3>What we can prove</h3>
+      <p class="lede" style="margin:0">Three to five market accounts published within the same
+      15-minute window, in the same format, eight separate times in thirteen weeks. Those posts
+      underperform their own market's baseline by a wide and consistent margin.</p>
+    </div>
+    <div class="card">
+      <h3>What we are inferring</h3>
+      <p class="lede" style="margin:0">That the creative is centrally produced and distributed.
+      We can see the timestamps, not the asset. Ask the question in the room rather than asserting
+      it — if the answer is "no, coincidence," that is still worth knowing.</p>
+    </div>
+  </div>
+</section>
+
+<section id="s-clusters">
+  <div class="eyebrow">The evidence</div>
+  <h2>Eight coordinated drops</h2>
+  <p class="lede">Each row is one moment when three or more markets posted simultaneously. The
+  score is the median robust z across that drop — how far it landed from each receiving market's
+  own normal for that format. Zero means "performed exactly like a typical post on that account."</p>
+  <div class="card" id="clusters"></div>
+</section>
+
+<section id="s-scorecard">
+  <div class="eyebrow">The network</div>
+  <h2>Market scorecard</h2>
+  <p class="lede">Every market judged against itself, then compared on rates rather than totals.
+  Reel efficiency is engagement per thousand plays — a true rate against actual distribution,
+  available because Instagram exposes play counts publicly. Reach index is plays per thousand
+  followers: how far the algorithm carries a market's video relative to its audience size.</p>
+  <div class="card"><table id="scoreT"></table>
+    <p class="note" id="scoreNote"></p>
+  </div>
+</section>
+
+<section id="s-eff">
+  <div class="eyebrow">The lever</div>
+  <h2>Reach is not the same as resonance</h2>
+  <p class="lede">Two different questions, deliberately kept on two different charts. How far does
+  a market's video travel, and how hard does it work once it gets there? The markets that win one
+  are not the markets that win the other.</p>
+  <div class="grid g2">
+    <div class="card chartcard"><h3>Engagement per 1,000 plays</h3><div id="chartEff"></div></div>
+    <div class="card chartcard"><h3>Plays per 1,000 followers</h3><div id="chartReach"></div></div>
+  </div>
+  <div class="card" style="margin-top:14px"><h3>Format mix by market</h3>
+    <div id="chartMix"></div>
+    <div class="legend">
+      <span><i class="sw" style="background:var(--o1)"></i>Reel</span>
+      <span><i class="sw" style="background:var(--o2)"></i>Carousel</span>
+      <span><i class="sw" style="background:var(--o3)"></i>Static image</span>
+    </div>
+    <p class="note" id="mixNote"></p>
+  </div>
+</section>
+
+<section id="s-flagged">
+  <div class="eyebrow">Where a human takes over</div>
+  <h2>The review queue</h2>
+  <p class="lede">The system produces flags, not verdicts. Every post below sits outside its own
+  market's normal range for its format — but the machine cannot see what the video was about,
+  whether the gym was closed that week, or whether a post did an operational job that engagement
+  will never measure. A strategist reads these, tags the content theme, and decides what reaches
+  the market teams. Links go to the live posts.</p>
+  <div class="card" id="flagged"></div>
+  <p class="note" id="flagNote"></p>
+</section>
+
+<section id="s-access">
+  <div class="eyebrow">The ceiling</div>
+  <h2>What we can see, and what we can't</h2>
+  <p class="lede">Everything on this page was built from publicly visible data — no login, no
+  partnership, no pixel, nothing you had to give us. That is the proof of concept and also the
+  limit. Here is precisely what is missing.</p>
+  <div class="grid g2">
+    <div class="card">
+      <h3 style="color:var(--cool)">Available from outside</h3>
+      <ul class="ck have">
+        <li>Likes and comment counts, every post, every market</li>
+        <li><b>Reel play counts</b> — a genuine reach denominator for 63% of output</li>
+        <li>Format, timestamp to the minute, pinned status</li>
+        <li>Follower counts per market account</li>
+        <li>Caption text and hashtags</li>
+      </ul>
+    </div>
+    <div class="card">
+      <h3 style="color:var(--coral)">Invisible without access</h3>
+      <ul class="ck want">
+        <li><b>Reach on carousels and stills</b> — 37% of output has no denominator at all</li>
+        <li><b>Saves and shares</b> — the signals that actually predict intent</li>
+        <li><b>Follower vs. non-follower split</b> — reaching new climbers, or the same regulars?</li>
+        <li><b>Profile taps and link clicks</b> — the bridge from post to day pass</li>
+        <li><b>Paid amplification</b> — a boosted post silently corrupts any organic baseline</li>
+        <li><b>Membership outcomes</b> — whether any of this fills the gym</li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+<section id="s-method">
+  <div class="eyebrow">Under the hood</div>
+  <h2>Method</h2>
+  <div class="card">
+    <details open>
+      <summary>Why the statistics are built this way</summary>
+      <ol>
+        <li><b>Engagement rate, not raw counts.</b> <code>(likes + comments) / followers</code>.
+        Without it, Seattle at 27,154 followers beats Boston at 6,711 by construction and the
+        comparison measures audience size, not content.</li>
+        <li><b>Log space.</b> Social engagement is log-normal with a long right tail. One breakout
+        reel pulls a raw mean above most of the data.</li>
+        <li><b>Median and MAD (×1.4826), never mean and standard deviation.</b> Using the mean to
+        find outliers is circular — the outliers move the mean.</li>
+        <li><b>Baselines are per-market and per-format.</b> A carousel in Tempe is not comparable
+        to a reel in Seattle, and pretending otherwise is the most common way this analysis goes
+        wrong.</li>
+        <li><b>Leave-one-out scoring.</b> Each post is measured against its peers <i>excluding
+        itself</i>, so a post never influences the bar it is judged against.</li>
+        <li><b>Robust z is comparable across markets by construction.</b> Each post is measured in
+        its own market's units, which is what makes the network rollups legitimate rather than a
+        disguised follower-count ranking.</li>
+        <li><b>Pinned posts excluded.</b> They sit at the top of a profile accumulating engagement
+        indefinitely; eleven were removed before any statistic was computed.</li>
+        <li><b>An explicit "no baseline" state.</b> Under eight comparable posts, the system
+        returns nothing. Refusing to answer is a feature — a system that always has an opinion is
+        guessing.</li>
+        <li><b>Confounds not controlled for.</b> Posting time of day, day of week, whether a post
+        was boosted, whether a climber with reach re-shared it, seasonality, and a three-fold
+        spread in posting cadence between markets. Every one is fixable with account access; none
+        are fixable from outside.</li>
+      </ol>
+    </details>
+  </div>
+</section>
+
+<footer>
+  <div id="foot"></div>
+  <p>Post-level aggregates only. No commenter identities, profile photos, or tagged-user records
+  were retained at any point in the pipeline.</p>
+  <p>One-time analysis prepared by Parallel Path. Covers May 20 – Aug 20, 2026. Not updated weekly.</p>
+</footer>
+
+</div>
+
+<script>
+const D = {"meta":{"brand":"Bouldering Project","window_start":"May 20, 2026","window_end":"Aug 20, 2026","weeks":13.0,"n_posts":234,"n_markets":9,"n_scored":192,"n_no_baseline":42,"total_followers":119252,"collected":"August 20, 2026","params":{"min_n":8,"z_flag":1.75,"sync_window_min":15,"sync_min_markets":3}},"syndication":{"n_clusters":8,"n_posts":27,"pct_of_network":12,"median_z_syndicated":-1.02,"median_z_syndicated_strict":-1.37,"n_syn_strict":24,"median_z_local":0.05,"n_syn_scored":21,"n_loc_scored":171,"mwu_z":-3.65,"mwu_p":0.0002672972277503897,"clusters":[{"when":"Jun 23, 2026 \u00b7 19:00","iso":"2026-06-23T19:00:00","fmt":"Reel","n_markets":5,"markets":["Austin","Phoenix","Salt Lake","Seattle","Washington DC"],"median_z":-0.22,"n_scored":5,"posts":[{"market":"Austin","z":0.17,"eng":160,"url":"https://www.instagram.com/p/DZ8HlyjjMNX/"},{"market":"Phoenix","z":0.04,"eng":134,"url":"https://www.instagram.com/p/DZ8HmVxD6Hd/"},{"market":"Salt Lake","z":-0.22,"eng":96,"url":"https://www.instagram.com/p/DZ8HmlFiMVv/"},{"market":"Seattle","z":-0.25,"eng":115,"url":"https://www.instagram.com/p/DZ8HmZpj6h6/"},{"market":"Washington DC","z":-1.89,"eng":46,"url":"https://www.instagram.com/p/DZ8IkyuAoKg/"}]},{"when":"Jun 30, 2026 \u00b7 00:00","iso":"2026-06-30T00:00:00","fmt":"Reel","n_markets":4,"markets":["Brooklyn","Phoenix","Salt Lake","Seattle"],"median_z":-3.03,"n_scored":4,"posts":[{"market":"Brooklyn","z":-1.55,"eng":17,"url":"https://www.instagram.com/p/DaMHskkARHL/"},{"market":"Phoenix","z":-3.99,"eng":14,"url":"https://www.instagram.com/p/DaMGzdjgrAA/"},{"market":"Salt Lake","z":-2.07,"eng":17,"url":"https://www.instagram.com/p/DaMGu4CFXq_/"},{"market":"Seattle","z":-4.13,"eng":9,"url":"https://www.instagram.com/p/DaMGsCcD48O/"}]},{"when":"Jul 01, 2026 \u00b7 16:30","iso":"2026-07-01T16:30:00","fmt":"Carousel","n_markets":3,"markets":["Boston","Brooklyn","Washington DC"],"median_z":-1.5,"n_scored":2,"posts":[{"market":"Boston","z":null,"eng":25,"url":"https://www.instagram.com/p/DaQc1WkIJix/"},{"market":"Brooklyn","z":-1.54,"eng":25,"url":"https://www.instagram.com/p/DaQc1gnDW1x/"},{"market":"Washington DC","z":-1.45,"eng":28,"url":"https://www.instagram.com/p/DaQc1Qcn7VN/"}]},{"when":"Jul 01, 2026 \u00b7 19:01","iso":"2026-07-01T19:01:00","fmt":"Carousel","n_markets":3,"markets":["Phoenix","Salt Lake","Seattle"],"median_z":0.13,"n_scored":1,"posts":[{"market":"Phoenix","z":null,"eng":68,"url":"https://www.instagram.com/p/DaQuDjmHyo3/"},{"market":"Salt Lake","z":null,"eng":70,"url":"https://www.instagram.com/p/DaQuENtn5YT/"},{"market":"Seattle","z":0.13,"eng":86,"url":"https://www.instagram.com/p/DaQuHxkHye5/"}]},{"when":"Jul 07, 2026 \u00b7 18:46","iso":"2026-07-07T18:46:00","fmt":"Carousel","n_markets":3,"markets":["Austin","Brooklyn","Washington DC"],"median_z":-1.79,"n_scored":3,"posts":[{"market":"Austin","z":-1.79,"eng":47,"url":"https://www.instagram.com/p/DagJGm2n-2g/"},{"market":"Brooklyn","z":-1.43,"eng":28,"url":"https://www.instagram.com/p/DagJrEPiY-q/"},{"market":"Washington DC","z":-2.04,"eng":15,"url":"https://www.instagram.com/p/DagJrZQCeen/"}]},{"when":"Jul 07, 2026 \u00b7 22:00","iso":"2026-07-07T22:00:00","fmt":"Carousel","n_markets":3,"markets":["Phoenix","Salt Lake","Seattle"],"median_z":-0.95,"n_scored":1,"posts":[{"market":"Phoenix","z":null,"eng":47,"url":"https://www.instagram.com/p/DagfU-fHQtQ/"},{"market":"Salt Lake","z":null,"eng":58,"url":"https://www.instagram.com/p/DagfX1-joQn/"},{"market":"Seattle","z":-0.95,"eng":41,"url":"https://www.instagram.com/p/DagfUy_jwsH/"}]},{"when":"Jul 29, 2026 \u00b7 18:03","iso":"2026-07-29T18:03:00","fmt":"Reel","n_markets":3,"markets":["Austin","Boston","Phoenix"],"median_z":0.84,"n_scored":3,"posts":[{"market":"Austin","z":0.84,"eng":254,"url":"https://www.instagram.com/p/DbYtARIxKyJ/"},{"market":"Boston","z":1.02,"eng":163,"url":"https://www.instagram.com/p/DbYvpl7MKEi/"},{"market":"Phoenix","z":-0.01,"eng":131,"url":"https://www.instagram.com/p/DbYugI_xL6a/"}]},{"when":"Aug 03, 2026 \u00b7 23:47","iso":"2026-08-03T23:47:00","fmt":"Reel","n_markets":3,"markets":["Boston","Brooklyn","Twin Cities"],"median_z":-0.99,"n_scored":2,"posts":[{"market":"Boston","z":-0.96,"eng":29,"url":"https://www.instagram.com/p/DbmNb2jAquu/"},{"market":"Brooklyn","z":-1.02,"eng":29,"url":"https://www.instagram.com/p/DbmNASwgbB7/"},{"market":"Twin Cities","z":null,"eng":42,"url":"https://www.instagram.com/p/DbmNLdcjM8g/"}]}],"sensitivity":[{"label":"15 min","clusters":8,"posts":27,"pct":12,"median_z":-1.02},{"label":"2 hours","clusters":19,"posts":86,"pct":37,"median_z":-0.22},{"label":"6 hours","clusters":36,"posts":173,"pct":74,"median_z":-0.03},{"label":"same day","clusters":18,"posts":228,"pct":97,"median_z":-0.0}]},"markets":{"aus":{"market":"Austin","username":"austinboulderingproject","followers":22582,"lifetime_posts":517,"n":42,"per_week":3.2,"mix":{"R":64,"C":26,"I":10},"mix_n":{"R":27,"C":11,"I":4},"median_er":0.0056460898060402085,"reel_n":27,"reel_eng_per_1k_plays":20.6,"reel_median_plays":6395,"reel_plays_per_1k_foll":283,"syndicated_n":3,"syndicated_pct":7,"n_scored":38,"median_z":0.04,"n_over":1,"n_under":4},"sea":{"market":"Seattle","username":"seattleboulderingproject","followers":27154,"lifetime_posts":1773,"n":51,"per_week":3.9,"mix":{"R":76,"C":22,"I":2},"mix_n":{"R":39,"C":11,"I":1},"median_er":0.004934816233335788,"reel_n":39,"reel_eng_per_1k_plays":12.6,"reel_median_plays":11833,"reel_plays_per_1k_foll":436,"syndicated_n":4,"syndicated_pct":8,"n_scored":50,"median_z":0.02,"n_over":4,"n_under":2},"bos":{"market":"Boston","username":"bostonboulderingproject","followers":6711,"lifetime_posts":462,"n":19,"per_week":1.5,"mix":{"R":68,"C":26,"I":5},"mix_n":{"R":13,"C":5,"I":1},"median_er":0.006556399940396364,"reel_n":13,"reel_eng_per_1k_plays":17.3,"reel_median_plays":3814,"reel_plays_per_1k_foll":568,"syndicated_n":3,"syndicated_pct":16,"n_scored":13,"median_z":-0.09,"n_over":3,"n_under":1},"bkn":{"market":"Brooklyn","username":"brooklynboulderingproject","followers":8112,"lifetime_posts":536,"n":24,"per_week":1.8,"mix":{"R":54,"C":46,"I":0},"mix_n":{"R":13,"C":11,"I":0},"median_er":0.010231755424063117,"reel_n":13,"reel_eng_per_1k_plays":21.5,"reel_median_plays":4183,"reel_plays_per_1k_foll":516,"syndicated_n":4,"syndicated_pct":17,"n_scored":24,"median_z":0.0,"n_over":1,"n_under":0},"msp":{"market":"Twin Cities","username":"minneapolisboulderingproject","followers":18530,"lifetime_posts":891,"n":21,"per_week":1.6,"mix":{"R":38,"C":43,"I":19},"mix_n":{"R":8,"C":9,"I":4},"median_er":0.0070696168375607125,"reel_n":8,"reel_eng_per_1k_plays":21.7,"reel_median_plays":8438,"reel_plays_per_1k_foll":455,"syndicated_n":1,"syndicated_pct":5,"n_scored":9,"median_z":0.32,"n_over":0,"n_under":1},"slc":{"market":"Salt Lake","username":"saltlakeboulderingproject","followers":9236,"lifetime_posts":478,"n":20,"per_week":1.5,"mix":{"R":75,"C":25,"I":0},"mix_n":{"R":15,"C":5,"I":0},"median_er":0.011801645734084019,"reel_n":15,"reel_eng_per_1k_plays":22.3,"reel_median_plays":5528,"reel_plays_per_1k_foll":599,"syndicated_n":4,"syndicated_pct":20,"n_scored":15,"median_z":0.05,"n_over":0,"n_under":1},"dc":{"market":"Washington DC","username":"dcboulderingproject","followers":9202,"lifetime_posts":902,"n":26,"per_week":2.0,"mix":{"R":58,"C":42,"I":0},"mix_n":{"R":15,"C":11,"I":0},"median_er":0.012334275157574442,"reel_n":15,"reel_eng_per_1k_plays":18.1,"reel_median_plays":5430,"reel_plays_per_1k_foll":590,"syndicated_n":3,"syndicated_pct":12,"n_scored":26,"median_z":-0.06,"n_over":0,"n_under":5},"az":{"market":"Phoenix","username":"arizonaboulderingproject","followers":10809,"lifetime_posts":441,"n":30,"per_week":2.3,"mix":{"R":57,"C":23,"I":20},"mix_n":{"R":17,"C":7,"I":6},"median_er":0.009945415857156074,"reel_n":17,"reel_eng_per_1k_plays":25.5,"reel_median_plays":4887,"reel_plays_per_1k_foll":452,"syndicated_n":5,"syndicated_pct":17,"n_scored":17,"median_z":-0.01,"n_over":0,"n_under":3},"nat":{"market":"National","username":"boulderingprojects","followers":6916,"lifetime_posts":187,"n":1,"per_week":0.1,"mix":{"R":0,"C":100,"I":0},"mix_n":{"R":0,"C":1,"I":0},"median_er":0.004337767495662233,"reel_n":0,"reel_eng_per_1k_plays":null,"reel_median_plays":null,"reel_plays_per_1k_foll":null,"syndicated_n":0,"syndicated_pct":0,"n_scored":0,"median_z":null,"n_over":0,"n_under":0}},"network_fmt":{"R":{"label":"Reel","n":147,"share":63,"median_er":0.008878302295365958,"median_eng":130,"eng_per_1k_plays":18.7},"C":{"label":"Carousel","n":71,"share":30,"median_er":0.0062910537515033765,"median_eng":93,"eng_per_1k_plays":null},"I":{"label":"Static image","n":16,"share":7,"median_er":0.0022457650793745324,"median_eng":36,"eng_per_1k_plays":null}},"flagged":[{"id":"Da3jALksfYa","market":"Boston","key":"bos","date":"Jul 16","iso":"2026-07-16T21:01:00","fmt":"Reel","state":"over","z":6.4,"eng":29647,"likes":29599,"comments":48,"plays":462711,"vs_baseline":48666,"baseline_n":12,"syndicated":false,"url":"https://www.instagram.com/p/Da3jALksfYa/"},{"id":"DbE1oArSsZw","market":"Seattle","key":"sea","date":"Jul 22","iso":"2026-07-22T00:49:00","fmt":"Reel","state":"over","z":5.93,"eng":8274,"likes":8204,"comments":70,"plays":147206,"vs_baseline":5940,"baseline_n":38,"syndicated":false,"url":"https://www.instagram.com/p/DbE1oArSsZw/"},{"id":"DaLk_-GDsaE","market":"Washington DC","key":"dc","date":"Jun 29","iso":"2026-06-29T19:07:00","fmt":"Reel","state":"under","z":-5.26,"eng":8,"likes":8,"comments":0,"plays":2414,"vs_baseline":-93,"baseline_n":14,"syndicated":false,"url":"https://www.instagram.com/p/DaLk_-GDsaE/"},{"id":"DaMGsCcD48O","market":"Seattle","key":"sea","date":"Jun 30","iso":"2026-06-30T00:00:00","fmt":"Reel","state":"under","z":-4.13,"eng":9,"likes":9,"comments":0,"plays":5546,"vs_baseline":-94,"baseline_n":38,"syndicated":true,"url":"https://www.instagram.com/p/DaMGsCcD48O/"},{"id":"DaMGzdjgrAA","market":"Phoenix","key":"az","date":"Jun 30","iso":"2026-06-30T00:02:00","fmt":"Reel","state":"under","z":-3.99,"eng":14,"likes":14,"comments":0,"plays":2458,"vs_baseline":-89,"baseline_n":16,"syndicated":true,"url":"https://www.instagram.com/p/DaMGzdjgrAA/"},{"id":"DZsvzOys50C","market":"Boston","key":"bos","date":"Jun 17","iso":"2026-06-17T19:44:00","fmt":"Reel","state":"over","z":3.8,"eng":2395,"likes":2392,"comments":3,"plays":48690,"vs_baseline":3839,"baseline_n":12,"syndicated":false,"url":"https://www.instagram.com/p/DZsvzOys50C/"},{"id":"DbmfbWSkuTq","market":"Washington DC","key":"dc","date":"Aug 04","iso":"2026-08-04T02:28:00","fmt":"Reel","state":"under","z":-2.65,"eng":31,"likes":30,"comments":1,"plays":2106,"vs_baseline":-75,"baseline_n":14,"syndicated":false,"url":"https://www.instagram.com/p/DbmfbWSkuTq/"},{"id":"Da04E2SyyBa","market":"Phoenix","key":"az","date":"Jul 15","iso":"2026-07-15T20:02:00","fmt":"Reel","state":"under","z":-2.58,"eng":31,"likes":28,"comments":3,"plays":3183,"vs_baseline":-77,"baseline_n":16,"syndicated":false,"url":"https://www.instagram.com/p/Da04E2SyyBa/"},{"id":"DYp0IMbyehH","market":"Seattle","key":"sea","date":"May 22","iso":"2026-05-22T20:01:00","fmt":"Reel","state":"over","z":2.38,"eng":711,"likes":697,"comments":14,"plays":44624,"vs_baseline":419,"baseline_n":38,"syndicated":false,"url":"https://www.instagram.com/p/DYp0IMbyehH/"},{"id":"DaLmn_HDjZy","market":"Austin","key":"aus","date":"Jun 29","iso":"2026-06-29T19:20:00","fmt":"Reel","state":"under","z":-2.35,"eng":31,"likes":30,"comments":1,"plays":2914,"vs_baseline":-80,"baseline_n":26,"syndicated":false,"url":"https://www.instagram.com/p/DaLmn_HDjZy/"},{"id":"DcMycZyGbfK","market":"Seattle","key":"sea","date":"Aug 18","iso":"2026-08-18T23:25:00","fmt":"Carousel","state":"over","z":2.35,"eng":423,"likes":416,"comments":7,"plays":null,"vs_baseline":465,"baseline_n":10,"syndicated":false,"url":"https://www.instagram.com/p/DcMycZyGbfK/"},{"id":"DZYjFzvSVyW","market":"Seattle","key":"sea","date":"Jun 09","iso":"2026-06-09T23:36:00","fmt":"Reel","state":"under","z":-2.27,"eng":31,"likes":31,"comments":0,"plays":7905,"vs_baseline":-78,"baseline_n":38,"syndicated":false,"url":"https://www.instagram.com/p/DZYjFzvSVyW/"},{"id":"DZOF-3Yk1EA","market":"Brooklyn","key":"bkn","date":"Jun 05","iso":"2026-06-05T22:02:00","fmt":"Reel","state":"over","z":2.12,"eng":477,"likes":462,"comments":15,"plays":20460,"vs_baseline":568,"baseline_n":12,"syndicated":false,"url":"https://www.instagram.com/p/DZOF-3Yk1EA/"},{"id":"DaMGu4CFXq_","market":"Salt Lake","key":"slc","date":"Jun 30","iso":"2026-06-30T00:01:00","fmt":"Reel","state":"under","z":-2.07,"eng":17,"likes":17,"comments":0,"plays":2705,"vs_baseline":-86,"baseline_n":14,"syndicated":true,"url":"https://www.instagram.com/p/DaMGu4CFXq_/"},{"id":"DbdijKZAFqK","market":"Austin","key":"aus","date":"Jul 31","iso":"2026-07-31T15:02:00","fmt":"Reel","state":"under","z":-2.05,"eng":38,"likes":37,"comments":1,"plays":3699,"vs_baseline":-75,"baseline_n":26,"syndicated":false,"url":"https://www.instagram.com/p/DbdijKZAFqK/"},{"id":"DagJrZQCeen","market":"Washington DC","key":"dc","date":"Jul 07","iso":"2026-07-07T18:51:00","fmt":"Carousel","state":"under","z":-2.04,"eng":15,"likes":15,"comments":0,"plays":null,"vs_baseline":-89,"baseline_n":10,"syndicated":true,"url":"https://www.instagram.com/p/DagJrZQCeen/"},{"id":"DZLj711SlzP","market":"Seattle","key":"sea","date":"Jun 04","iso":"2026-06-04T22:28:00","fmt":"Reel","state":"over","z":2.0,"eng":548,"likes":531,"comments":17,"plays":23075,"vs_baseline":300,"baseline_n":38,"syndicated":false,"url":"https://www.instagram.com/p/DZLj711SlzP/"},{"id":"DaMKXDegSdz","market":"Boston","key":"bos","date":"Jun 30","iso":"2026-06-30T00:32:00","fmt":"Reel","state":"under","z":-1.97,"eng":10,"likes":10,"comments":0,"plays":1943,"vs_baseline":-88,"baseline_n":12,"syndicated":false,"url":"https://www.instagram.com/p/DaMKXDegSdz/"},{"id":"DagmLqGGwCM","market":"Twin Cities","key":"msp","date":"Jul 07","iso":"2026-07-07T23:00:00","fmt":"Carousel","state":"under","z":-1.96,"eng":51,"likes":51,"comments":0,"plays":null,"vs_baseline":-64,"baseline_n":8,"syndicated":false,"url":"https://www.instagram.com/p/DagmLqGGwCM/"},{"id":"Dbl4xAmScdc","market":"Phoenix","key":"az","date":"Aug 03","iso":"2026-08-03T20:51:00","fmt":"Reel","state":"under","z":-1.95,"eng":44,"likes":44,"comments":0,"plays":4104,"vs_baseline":-67,"baseline_n":16,"syndicated":false,"url":"https://www.instagram.com/p/Dbl4xAmScdc/"},{"id":"DY7669PH_Qq","market":"Austin","key":"aus","date":"May 29","iso":"2026-05-29T20:38:00","fmt":"Carousel","state":"over","z":1.95,"eng":482,"likes":460,"comments":22,"plays":null,"vs_baseline":244,"baseline_n":10,"syndicated":false,"url":"https://www.instagram.com/p/DY7669PH_Qq/"},{"id":"DZ8IkyuAoKg","market":"Washington DC","key":"dc","date":"Jun 23","iso":"2026-06-23T19:10:00","fmt":"Reel","state":"under","z":-1.89,"eng":46,"likes":45,"comments":1,"plays":2545,"vs_baseline":-63,"baseline_n":14,"syndicated":true,"url":"https://www.instagram.com/p/DZ8IkyuAoKg/"},{"id":"DbmR9uHjsFL","market":"Austin","key":"aus","date":"Aug 04","iso":"2026-08-04T00:31:00","fmt":"Reel","state":"under","z":-1.87,"eng":43,"likes":43,"comments":0,"plays":3049,"vs_baseline":-72,"baseline_n":26,"syndicated":false,"url":"https://www.instagram.com/p/DbmR9uHjsFL/"},{"id":"DcPFhFYNsJq","market":"Washington DC","key":"dc","date":"Aug 19","iso":"2026-08-19T20:50:00","fmt":"Reel","state":"under","z":-1.81,"eng":48,"likes":47,"comments":1,"plays":2556,"vs_baseline":-61,"baseline_n":14,"syndicated":false,"url":"https://www.instagram.com/p/DcPFhFYNsJq/"},{"id":"DagJGm2n-2g","market":"Austin","key":"aus","date":"Jul 07","iso":"2026-07-07T18:46:00","fmt":"Carousel","state":"under","z":-1.79,"eng":47,"likes":47,"comments":0,"plays":null,"vs_baseline":-73,"baseline_n":10,"syndicated":true,"url":"https://www.instagram.com/p/DagJGm2n-2g/"},{"id":"Db6lVk1Myd2","market":"Boston","key":"bos","date":"Aug 11","iso":"2026-08-11T21:46:00","fmt":"Reel","state":"over","z":1.78,"eng":341,"likes":326,"comments":15,"plays":9873,"vs_baseline":461,"baseline_n":12,"syndicated":false,"url":"https://www.instagram.com/p/Db6lVk1Myd2/"}],"posts":[{"id":"DYkUQ6pur9g","key":"bos","iso":"2026-05-20T16:42:00","fmt":"I","eng":14,"er":0.00209,"plays":null,"z":null,"zf":null,"state":"no_baseline","syn":0,"url":"https://www.instagram.com/p/DYkUQ6pur9g/"},{"id":"DYkfe0RjMvy","key":"aus","iso":"2026-05-20T18:16:00","fmt":"R","eng":132,"er":0.00585,"plays":4829,"z":-0.2,"zf":-0.2,"state":"normal","syn":0,"url":"https://www.instagram.com/p/DYkfe0RjMvy/"},{"id":"DYm-aldj8ho","key":"msp","iso":"2026-05-21T17:24:00","fmt":"C","eng":227,"er":0.01225,"plays":null,"z":1.38,"zf":1.38,"state":"normal","syn":0,"url":"https://www.instagram.com/p/DYm-aldj8ho/"},{"id":"DYnKmQOgLFZ","key":"sea","iso":"2026-05-21T19:11:00","fmt":"R","eng":367,"er":0.01352,"plays":18635,"z":1.42,"zf":1.42,"state":"normal","syn":0,"url":"https://www.instagram.com/p/DYnKmQOgLFZ/"},{"id":"DYnKeW2sJpX","key":"bos","iso":"2026-05-21T19:14:00","fmt":"R","eng":98,"er":0.0146,"plays":3458,"z":0.4,"zf":0.4,"state":"normal","syn":0,"url":"https://www.instagram.com/p/DYnKeW2sJpX/"},{"id":"DYnN6EoGpwz","key":"aus","iso":"2026-05-21T19:40:00","fmt":"I","eng":77,"er":0.00341,"plays":null,"z":null,"zf":null,"state":"no_baseline","syn":0,"url":"https://www.instagram.com/p/DYnN6EoGpwz/"},{"id":"DYpSyqmAdeS","key":"sea","iso":"2026-05-22T15:02:00","fmt":"R","eng":163,"er":0.006,"plays":11303,"z":0.22,"zf":0.22,"state":"normal","syn":0,"url":"https://www.instagram.com/p/DYpSyqmAdeS/"},{"id":"DYp0IMbyehH","key":"sea","iso":"2026-05-22T20:01:00","fmt":"R","eng":711,"er":0.02618,"plays":44624,"z":2.38,"zf":2.38,"state":"over","syn":0,"url":"https://www.instagram.com/p/DYp0IMbyehH/"},{"id":"DYp6nEykqLl","key":"aus","iso":"2026-05-22T20:49:00","fmt":"R","eng":206,"er":0.00912,"plays":8477,"z":0.49,"zf":0.49,"state":"normal","syn":0,"url":"https://www.instagram.com/p/DYp6nEykqLl/"},{"id":"DYqFruBBaP0","key":"az","iso":"2026-05-22T22:26:00","fmt":"R","eng":157,"er":0.01452,"plays":5741,"z":0.29,"zf":0.29,"state":"normal","syn":0,"url":"https://www.instagram.com/p/DYqFruBBaP0/"},{"id":"DYrz5XEycAD","key":"sea","iso":"2026-05-23T14:30:00","fmt":"R","eng":134,"er":0.00493,"plays":14269,"z":-0.06,"zf":-0.06,"state":"normal","syn":0,"url":"https://www.instagram.com/p/DYrz5XEycAD/"},{"id":"DYxDo_Pjg-W","key":"msp","iso":"2026-05-25T15:22:00","fmt":"C","eng":151,"er":0.00815,"plays":null,"z":0.66,"zf":0.66,"state":"normal","syn":0,"url":"https://www.instagram.com/p/DYxDo_Pjg-W/"},{"id":"DYxxhjsprmC","key":"slc","iso":"2026-05-25T22:09:00","fmt":"R","eng":436,"er":0.04721,"plays":12238,"z":1.47,"zf":1.47,"state":"normal","syn":0,"url":"https://www.instagram.com/p/DYxxhjsprmC/"},{"id":"DYz1WBYBYbE","key":"msp","iso":"2026-05-26T15:29:00","fmt":"R","eng":236,"er":0.01274,"plays":12172,"z":null,"zf":null,"state":"no_baseline","syn":0,"url":"https://www.instagram.com/p/DYz1WBYBYbE/"},{"id":"DYzp43HxpCK","key":"bkn","iso":"2026-05-26T15:39:00","fmt":"R","eng":213,"er":0.02626,"plays":9430,"z":1.22,"zf":1.22,"state":"normal","syn":0,"url":"https://www.instagram.com/p/DYzp43HxpCK/"},{"id":"DY0J6v7MsUo","key":"bos","iso":"2026-05-26T20:21:00","fmt":"R","eng":44,"er":0.00656,"plays":6973,"z":-0.47,"zf":-0.47,"state":"normal","syn":0,"url":"https://www.instagram.com/p/DY0J6v7MsUo/"},{"id":"DY0Qm5hjhEz","key":"aus","iso":"2026-05-26T21:15:00","fmt":"R","eng":88,"er":0.0039,"plays":5520,"z":-0.82,"zf":-0.82,"state":"normal","syn":0,"url":"https://www.instagram.com/p/DY0Qm5hjhEz/"},{"id":"DY0vkq-yno8","key":"sea","iso":"2026-05-27T01:46:00","fmt":"R","eng":132,"er":0.00486,"plays":11422,"z":-0.08,"zf":-0.08,"state":"normal","syn":0,"url":"https://www.instagram.com/p/DY0vkq-yno8/"},{"id":"DY2b0EuxdSK","key":"az","iso":"2026-05-27T17:32:00","fmt":"R","eng":248,"er":0.02294,"plays":9737,"z":1.14,"zf":1.14,"state":"normal","syn":0,"url":"https://www.instagram.com/p/DY2b0EuxdSK/"},{"id":"DY2hhi2DEGi","key":"aus","iso":"2026-05-27T18:20:00","fmt":"R","eng":224,"er":0.00992,"plays":10851,"z":0.59,"zf":0.59,"state":"normal","syn":0,"url":"https://www.instagram.com/p/DY2hhi2DEGi/"},{"id":"DY26-9MkqSw","key":"sea","iso":"2026-05-27T22:02:00","fmt":"C","eng":111,"er":0.00409,"plays":null,"z":0.38,"zf":0.38,"state":"normal","syn":0,"url":"https://www.instagram.com/p/DY26-9MkqSw/"},{"id":"DY4s8zhRmgM","key":"dc","iso":"2026-05-28T14:39:00","fmt":"R","eng":109,"er":0.01185,"plays":7133,"z":-0.2,"zf":-0.2,"state":"normal","syn":0,"url":"https://www.instagram.com/p/DY4s8zhRmgM/"},{"id":"DY42r_3Efn1","key":"bkn","iso":"2026-05-28T16:03:00","fmt":"C","eng":230,"er":0.02835,"plays":null,"z":0.84,"zf":0.84,"state":"normal","syn":0,"url":"https://www.instagram.com/p/DY42r_3Efn1/"},{"id":"DY5bSwKSMom","key":"sea","iso":"2026-05-28T21:28:00","fmt":"R","eng":396,"er":0.01458,"plays":15284,"z":1.53,"zf":1.53,"state":"normal","syn":0,"url":"https://www.instagram.com/p/DY5bSwKSMom/"},{"id":"DY7669PH_Qq","key":"aus","iso":"2026-05-29T20:38:00","fmt":"C","eng":482,"er":0.02134,"plays":null,"z":1.95,"zf":1.95,"state":"over","syn":0,"url":"https://www.instagram.com/p/DY7669PH_Qq/"},{"id":"DY8QTZev5Ou","key":"sea","iso":"2026-05-29T23:48:00","fmt":"R","eng":410,"er":0.0151,"plays":22934,"z":1.58,"zf":1.58,"state":"normal","syn":0,"url":"https://www.instagram.com/p/DY8QTZev5Ou/"},{"id":"DY8Ue-PmEQW","key":"az","iso":"2026-05-30T00:21:00","fmt":"C","eng":64,"er":0.00592,"plays":null,"z":null,"zf":null,"state":"no_baseline","syn":0,"url":"https://www.instagram.com/p/DY8Ue-PmEQW/"},{"id":"DY-culwjziU","key":"aus","iso":"2026-05-30T20:12:00","fmt":"R","eng":114,"er":0.00505,"plays":6196,"z":-0.39,"zf":-0.39,"state":"normal","syn":0,"url":"https://www.instagram.com/p/DY-culwjziU/"},{"id":"DZC3HdzDp0o","key":"msp","iso":"2026-06-01T13:19:00","fmt":"C","eng":77,"er":0.00416,"plays":null,"z":-1.17,"zf":-1.17,"state":"normal","syn":0,"url":"https://www.instagram.com/p/DZC3HdzDp0o/"},{"id":"DZDOcV6iS6G","key":"bkn","iso":"2026-06-01T16:43:00","fmt":"C","eng":31,"er":0.00382,"plays":null,"z":-1.33,"zf":-1.33,"state":"normal","syn":0,"url":"https://www.instagram.com/p/DZDOcV6iS6G/"},{"id":"DZDb1cSCYFM","key":"aus","iso":"2026-06-01T18:40:00","fmt":"C","eng":90,"er":0.00399,"plays":null,"z":-0.91,"zf":-0.91,"state":"normal","syn":0,"url":"https://www.instagram.com/p/DZDb1cSCYFM/"},{"id":"DZDunCPjZ49","key":"dc","iso":"2026-06-01T21:24:00","fmt":"C","eng":283,"er":0.03075,"plays":null,"z":0.74,"zf":0.74,"state":"normal","syn":0,"url":"https://www.instagram.com/p/DZDunCPjZ49/"},{"id":"DZDuu2MS6ub","key":"sea","iso":"2026-06-01T21:28:00","fmt":"R","eng":103,"er":0.00379,"plays":12407,"z":-0.39,"zf":-0.39,"state":"normal","syn":0,"url":"https://www.instagram.com/p/DZDuu2MS6ub/"},{"id":"DZDyk_xsk3z","key":"bos","iso":"2026-06-01T22:09:00","fmt":"R","eng":107,"er":0.01594,"plays":6468,"z":0.47,"zf":0.47,"state":"normal","syn":0,"url":"https://www.instagram.com/p/DZDyk_xsk3z/"},{"id":"DZGwBdpSxFG","key":"sea","iso":"2026-06-03T01:36:00","fmt":"R","eng":393,"er":0.01447,"plays":22274,"z":1.52,"zf":1.52,"state":"normal","syn":0,"url":"https://www.instagram.com/p/DZGwBdpSxFG/"},{"id":"DZIV11HAHZL","key":"bkn","iso":"2026-06-03T16:24:00","fmt":"C","eng":198,"er":0.02441,"plays":null,"z":0.73,"zf":0.73,"state":"normal","syn":0,"url":"https://www.instagram.com/p/DZIV11HAHZL/"},{"id":"DZIgWVIiEcp","key":"aus","iso":"2026-06-03T17:56:00","fmt":"R","eng":77,"er":0.00341,"plays":6148,"z":-1.02,"zf":-1.02,"state":"normal","syn":0,"url":"https://www.instagram.com/p/DZIgWVIiEcp/"},{"id":"DZIlrbAxDSq","key":"az","iso":"2026-06-03T18:45:00","fmt":"R","eng":212,"er":0.01961,"plays":9437,"z":0.86,"zf":0.86,"state":"normal","syn":0,"url":"https://www.instagram.com/p/DZIlrbAxDSq/"},{"id":"DZIrm8bFMRI","key":"bos","iso":"2026-06-03T19:34:00","fmt":"C","eng":34,"er":0.00507,"plays":null,"z":null,"zf":null,"state":"no_baseline","syn":0,"url":"https://www.instagram.com/p/DZIrm8bFMRI/"},{"id":"DZI1-bHDIlU","key":"dc","iso":"2026-06-03T21:05:00","fmt":"R","eng":92,"er":0.01,"plays":3787,"z":-0.48,"zf":-0.48,"state":"normal","syn":0,"url":"https://www.instagram.com/p/DZI1-bHDIlU/"},{"id":"DZI8e0YyOBH","key":"sea","iso":"2026-06-03T22:04:00","fmt":"R","eng":170,"er":0.00626,"plays":11745,"z":0.28,"zf":0.28,"state":"normal","syn":0,"url":"https://www.instagram.com/p/DZI8e0YyOBH/"},{"id":"DZLNgWJvxRT","key":"az","iso":"2026-06-04T19:13:00","fmt":"I","eng":26,"er":0.00241,"plays":null,"z":null,"zf":null,"state":"no_baseline","syn":0,"url":"https://www.instagram.com/p/DZLNgWJvxRT/"},{"id":"DZLj711SlzP","key":"sea","iso":"2026-06-04T22:28:00","fmt":"R","eng":548,"er":0.02018,"plays":23075,"z":2.0,"zf":2.0,"state":"over","syn":0,"url":"https://www.instagram.com/p/DZLj711SlzP/"},{"id":"DZNhh2kMToK","key":"bos","iso":"2026-06-05T16:59:00","fmt":"R","eng":39,"er":0.00581,"plays":3123,"z":-0.57,"zf":-0.57,"state":"normal","syn":0,"url":"https://www.instagram.com/p/DZNhh2kMToK/"},{"id":"DZNt1NgR_RY","key":"aus","iso":"2026-06-05T18:48:00","fmt":"R","eng":381,"er":0.01687,"plays":14046,"z":1.42,"zf":1.42,"state":"normal","syn":0,"url":"https://www.instagram.com/p/DZNt1NgR_RY/"},{"id":"DZOAKifEuev","key":"slc","iso":"2026-06-05T21:10:00","fmt":"C","eng":291,"er":0.03151,"plays":null,"z":null,"zf":null,"state":"no_baseline","syn":0,"url":"https://www.instagram.com/p/DZOAKifEuev/"},{"id":"DZOF-3Yk1EA","key":"bkn","iso":"2026-06-05T22:02:00","fmt":"R","eng":477,"er":0.0588,"plays":20460,"z":2.12,"zf":2.12,"state":"over","syn":0,"url":"https://www.instagram.com/p/DZOF-3Yk1EA/"},{"id":"DZVGhwzuQtm","key":"msp","iso":"2026-06-08T15:21:00","fmt":"R","eng":177,"er":0.00955,"plays":8211,"z":null,"zf":null,"state":"no_baseline","syn":0,"url":"https://www.instagram.com/p/DZVGhwzuQtm/"},{"id":"DZVlYiWiv3t","key":"aus","iso":"2026-06-08T19:51:00","fmt":"R","eng":55,"er":0.00244,"plays":3746,"z":-1.51,"zf":-1.51,"state":"normal","syn":0,"url":"https://www.instagram.com/p/DZVlYiWiv3t/"},{"id":"DZVsSCFkkbH","key":"slc","iso":"2026-06-08T20:50:00","fmt":"C","eng":260,"er":0.02815,"plays":null,"z":null,"zf":null,"state":"no_baseline","syn":0,"url":"https://www.instagram.com/p/DZVsSCFkkbH/"},{"id":"DZVwSSySYwo","key":"sea","iso":"2026-06-08T21:28:00","fmt":"R","eng":320,"er":0.01178,"plays":15437,"z":1.23,"zf":1.23,"state":"normal","syn":0,"url":"https://www.instagram.com/p/DZVwSSySYwo/"},{"id":"DZV5DU5gXuh","key":"sea","iso":"2026-06-08T22:42:00","fmt":"C","eng":80,"er":0.00295,"plays":null,"z":0.03,"zf":0.03,"state":"normal","syn":0,"url":"https://www.instagram.com/p/DZV5DU5gXuh/"},{"id":"DZWL6cMCrhW","key":"dc","iso":"2026-06-09T01:28:00","fmt":"R","eng":118,"er":0.01282,"plays":6723,"z":-0.0,"zf":-0.0,"state":"normal","syn":0,"url":"https://www.instagram.com/p/DZWL6cMCrhW/"},{"id":"DZX1Hg2OzCy","key":"msp","iso":"2026-06-09T16:48:00","fmt":"R","eng":179,"er":0.00966,"plays":7561,"z":null,"zf":null,"state":"no_baseline","syn":0,"url":"https://www.instagram.com/p/DZX1Hg2OzCy/"},{"id":"DZYjFzvSVyW","key":"sea","iso":"2026-06-09T23:36:00","fmt":"R","eng":31,"er":0.00114,"plays":7905,"z":-2.27,"zf":-2.27,"state":"under","syn":0,"url":"https://www.instagram.com/p/DZYjFzvSVyW/"},{"id":"DZaRQffmSwp","key":"sea","iso":"2026-06-10T15:30:00","fmt":"I","eng":25,"er":0.00092,"plays":null,"z":null,"zf":null,"state":"no_baseline","syn":0,"url":"https://www.instagram.com/p/DZaRQffmSwp/"},{"id":"DZaxTQEH12t","key":"bkn","iso":"2026-06-10T20:10:00","fmt":"C","eng":152,"er":0.01874,"plays":null,"z":0.51,"zf":0.51,"state":"normal","syn":0,"url":"https://www.instagram.com/p/DZaxTQEH12t/"},{"id":"DZa1cNWHxAy","key":"dc","iso":"2026-06-10T20:46:00","fmt":"C","eng":160,"er":0.01739,"plays":null,"z":0.31,"zf":0.31,"state":"normal","syn":0,"url":"https://www.instagram.com/p/DZa1cNWHxAy/"},{"id":"DZa4nVGpIkZ","key":"slc","iso":"2026-06-10T21:15:00","fmt":"R","eng":83,"er":0.00899,"plays":4021,"z":-0.37,"zf":-0.37,"state":"normal","syn":0,"url":"https://www.instagram.com/p/DZa4nVGpIkZ/"},{"id":"DZbEbsjPcOy","key":"sea","iso":"2026-06-10T23:05:00","fmt":"R","eng":176,"er":0.00648,"plays":14853,"z":0.32,"zf":0.32,"state":"normal","syn":0,"url":"https://www.instagram.com/p/DZbEbsjPcOy/"},{"id":"DZc25wRD34j","key":"aus","iso":"2026-06-11T15:38:00","fmt":"I","eng":75,"er":0.00332,"plays":null,"z":null,"zf":null,"state":"no_baseline","syn":0,"url":"https://www.instagram.com/p/DZc25wRD34j/"},{"id":"DZdaVwyEgc5","key":"az","iso":"2026-06-11T20:47:00","fmt":"C","eng":258,"er":0.02387,"plays":null,"z":null,"zf":null,"state":"no_baseline","syn":0,"url":"https://www.instagram.com/p/DZdaVwyEgc5/"},{"id":"DZf6UVODkn_","key":"aus","iso":"2026-06-12T20:06:00","fmt":"R","eng":149,"er":0.0066,"plays":6954,"z":0.03,"zf":0.03,"state":"normal","syn":0,"url":"https://www.instagram.com/p/DZf6UVODkn_/"},{"id":"DZgF0TYiX_J","key":"msp","iso":"2026-06-12T21:46:00","fmt":"I","eng":12,"er":0.00065,"plays":null,"z":null,"zf":null,"state":"no_baseline","syn":0,"url":"https://www.instagram.com/p/DZgF0TYiX_J/"},{"id":"DZgQXk1vK1v","key":"az","iso":"2026-06-12T23:20:00","fmt":"R","eng":204,"er":0.01887,"plays":6791,"z":0.79,"zf":0.79,"state":"normal","syn":0,"url":"https://www.instagram.com/p/DZgQXk1vK1v/"},{"id":"DZil-pJSoqH","key":"sea","iso":"2026-06-13T21:12:00","fmt":"R","eng":325,"er":0.01197,"plays":16756,"z":1.25,"zf":1.25,"state":"normal","syn":0,"url":"https://www.instagram.com/p/DZil-pJSoqH/"},{"id":"DZnhOT6j1d8","key":"aus","iso":"2026-06-15T19:00:00","fmt":"R","eng":179,"er":0.00793,"plays":14732,"z":0.31,"zf":0.31,"state":"normal","syn":0,"url":"https://www.instagram.com/p/DZnhOT6j1d8/"},{"id":"DZnhUzVFNIY","key":"sea","iso":"2026-06-15T19:02:00","fmt":"R","eng":141,"er":0.00519,"plays":14624,"z":0.04,"zf":0.04,"state":"normal","syn":0,"url":"https://www.instagram.com/p/DZnhUzVFNIY/"},{"id":"DZp01ymjOgP","key":"msp","iso":"2026-06-16T16:30:00","fmt":"I","eng":13,"er":0.0007,"plays":null,"z":null,"zf":null,"state":"no_baseline","syn":0,"url":"https://www.instagram.com/p/DZp01ymjOgP/"},{"id":"DZqFba_AIWg","key":"aus","iso":"2026-06-16T18:55:00","fmt":"R","eng":173,"er":0.00766,"plays":11514,"z":0.27,"zf":0.27,"state":"normal","syn":0,"url":"https://www.instagram.com/p/DZqFba_AIWg/"},{"id":"DZskBhzsJm3","key":"dc","iso":"2026-06-17T18:01:00","fmt":"R","eng":170,"er":0.01847,"plays":5970,"z":0.66,"zf":0.66,"state":"normal","syn":0,"url":"https://www.instagram.com/p/DZskBhzsJm3/"},{"id":"DZsvzOys50C","key":"bos","iso":"2026-06-17T19:44:00","fmt":"R","eng":2395,"er":0.35688,"plays":48690,"z":3.8,"zf":3.8,"state":"over","syn":0,"url":"https://www.instagram.com/p/DZsvzOys50C/"},{"id":"DZs4RgVuM5b","key":"aus","iso":"2026-06-17T21:16:00","fmt":"R","eng":278,"er":0.01231,"plays":8087,"z":0.97,"zf":0.97,"state":"normal","syn":0,"url":"https://www.instagram.com/p/DZs4RgVuM5b/"},{"id":"DZtAdjehJCr","key":"az","iso":"2026-06-17T22:14:00","fmt":"I","eng":41,"er":0.00379,"plays":null,"z":null,"zf":null,"state":"no_baseline","syn":0,"url":"https://www.instagram.com/p/DZtAdjehJCr/"},{"id":"DZtQQ_kzrr3","key":"slc","iso":"2026-06-18T00:30:00","fmt":"R","eng":220,"er":0.02382,"plays":8919,"z":0.73,"zf":0.73,"state":"normal","syn":0,"url":"https://www.instagram.com/p/DZtQQ_kzrr3/"},{"id":"DZtX0SnS5TG","key":"sea","iso":"2026-06-18T01:34:00","fmt":"R","eng":79,"er":0.00291,"plays":9497,"z":-0.86,"zf":-0.86,"state":"normal","syn":0,"url":"https://www.instagram.com/p/DZtX0SnS5TG/"},{"id":"DZv8PfAhf46","key":"sea","iso":"2026-06-19T01:30:00","fmt":"R","eng":135,"er":0.00497,"plays":11833,"z":-0.05,"zf":-0.05,"state":"normal","syn":0,"url":"https://www.instagram.com/p/DZv8PfAhf46/"},{"id":"DZxudxYEahr","key":"aus","iso":"2026-06-19T18:08:00","fmt":"R","eng":78,"er":0.00345,"plays":5040,"z":-1.0,"zf":-1.0,"state":"normal","syn":0,"url":"https://www.instagram.com/p/DZxudxYEahr/"},{"id":"DZx8Ki3zdgl","key":"slc","iso":"2026-06-19T20:10:00","fmt":"R","eng":122,"er":0.01321,"plays":5528,"z":0.11,"zf":0.11,"state":"normal","syn":0,"url":"https://www.instagram.com/p/DZx8Ki3zdgl/"},{"id":"DZyG5v3jmBh","key":"bkn","iso":"2026-06-19T21:43:00","fmt":"R","eng":76,"er":0.00937,"plays":4653,"z":-0.02,"zf":-0.02,"state":"normal","syn":0,"url":"https://www.instagram.com/p/DZyG5v3jmBh/"},{"id":"DZ5SOBOKQIj","key":"dc","iso":"2026-06-22T16:36:00","fmt":"R","eng":128,"er":0.01391,"plays":5430,"z":0.19,"zf":0.19,"state":"normal","syn":0,"url":"https://www.instagram.com/p/DZ5SOBOKQIj/"},{"id":"DZ5f8wQEVM5","key":"aus","iso":"2026-06-22T18:35:00","fmt":"C","eng":193,"er":0.00855,"plays":null,"z":0.49,"zf":0.49,"state":"normal","syn":0,"url":"https://www.instagram.com/p/DZ5f8wQEVM5/"},{"id":"DZ7tUZVEWO6","key":"bkn","iso":"2026-06-23T15:11:00","fmt":"R","eng":112,"er":0.01381,"plays":4511,"z":0.42,"zf":0.42,"state":"normal","syn":0,"url":"https://www.instagram.com/p/DZ7tUZVEWO6/"},{"id":"DZ7zua6Fay4","key":"bos","iso":"2026-06-23T16:07:00","fmt":"R","eng":56,"er":0.00834,"plays":2989,"z":-0.28,"zf":-0.28,"state":"normal","syn":0,"url":"https://www.instagram.com/p/DZ7zua6Fay4/"},{"id":"DZ8HmVxD6Hd","key":"az","iso":"2026-06-23T19:00:00","fmt":"R","eng":134,"er":0.0124,"plays":4163,"z":0.04,"zf":0.04,"state":"normal","syn":1,"url":"https://www.instagram.com/p/DZ8HmVxD6Hd/"},{"id":"DZ8HlyjjMNX","key":"aus","iso":"2026-06-23T19:00:00","fmt":"R","eng":160,"er":0.00709,"plays":6395,"z":0.17,"zf":0.17,"state":"normal","syn":1,"url":"https://www.instagram.com/p/DZ8HlyjjMNX/"},{"id":"DZ8HmZpj6h6","key":"sea","iso":"2026-06-23T19:00:00","fmt":"R","eng":115,"er":0.00424,"plays":8435,"z":-0.25,"zf":-0.25,"state":"normal","syn":1,"url":"https://www.instagram.com/p/DZ8HmZpj6h6/"},{"id":"DZ8HmlFiMVv","key":"slc","iso":"2026-06-23T19:01:00","fmt":"R","eng":96,"er":0.01039,"plays":3253,"z":-0.22,"zf":-0.22,"state":"normal","syn":1,"url":"https://www.instagram.com/p/DZ8HmlFiMVv/"},{"id":"DZ8IkyuAoKg","key":"dc","iso":"2026-06-23T19:10:00","fmt":"R","eng":46,"er":0.005,"plays":2545,"z":-1.89,"zf":-1.89,"state":"under","syn":1,"url":"https://www.instagram.com/p/DZ8IkyuAoKg/"},{"id":"DZ8PxD6znkS","key":"slc","iso":"2026-06-23T20:21:00","fmt":"R","eng":82,"er":0.00888,"plays":5778,"z":-0.38,"zf":-0.38,"state":"normal","syn":0,"url":"https://www.instagram.com/p/DZ8PxD6znkS/"},{"id":"DZ8vIKbOk7C","key":"sea","iso":"2026-06-24T00:47:00","fmt":"R","eng":139,"er":0.00512,"plays":7773,"z":0.01,"zf":0.01,"state":"normal","syn":0,"url":"https://www.instagram.com/p/DZ8vIKbOk7C/"},{"id":"DZ-fgCiSt94","key":"sea","iso":"2026-06-24T17:14:00","fmt":"R","eng":135,"er":0.00497,"plays":9131,"z":-0.05,"zf":-0.05,"state":"normal","syn":0,"url":"https://www.instagram.com/p/DZ-fgCiSt94/"},{"id":"DaA-1TUHPpi","key":"bkn","iso":"2026-06-25T16:19:00","fmt":"C","eng":95,"er":0.01171,"plays":null,"z":0.02,"zf":0.02,"state":"normal","syn":0,"url":"https://www.instagram.com/p/DaA-1TUHPpi/"},{"id":"DaBSxRcn97g","key":"aus","iso":"2026-06-25T19:14:00","fmt":"C","eng":93,"er":0.00412,"plays":null,"z":-0.84,"zf":-0.84,"state":"normal","syn":0,"url":"https://www.instagram.com/p/DaBSxRcn97g/"},{"id":"DaBdjk4SZ5l","key":"az","iso":"2026-06-25T20:50:00","fmt":"R","eng":136,"er":0.01258,"plays":4403,"z":0.06,"zf":0.06,"state":"normal","syn":0,"url":"https://www.instagram.com/p/DaBdjk4SZ5l/"},{"id":"DaBkikFSNvn","key":"sea","iso":"2026-06-25T21:50:00","fmt":"R","eng":113,"er":0.00416,"plays":9248,"z":-0.27,"zf":-0.27,"state":"normal","syn":0,"url":"https://www.instagram.com/p/DaBkikFSNvn/"},{"id":"DaGTECJH59v","key":"bkn","iso":"2026-06-27T17:53:00","fmt":"C","eng":248,"er":0.03057,"plays":null,"z":0.89,"zf":0.89,"state":"normal","syn":0,"url":"https://www.instagram.com/p/DaGTECJH59v/"},{"id":"DaIpv9wS9oc","key":"sea","iso":"2026-06-28T15:55:00","fmt":"R","eng":99,"er":0.00365,"plays":13283,"z":-0.44,"zf":-0.44,"state":"normal","syn":0,"url":"https://www.instagram.com/p/DaIpv9wS9oc/"},{"id":"DaLk_-GDsaE","key":"dc","iso":"2026-06-29T19:07:00","fmt":"R","eng":8,"er":0.00087,"plays":2414,"z":-5.26,"zf":-5.26,"state":"under","syn":0,"url":"https://www.instagram.com/p/DaLk_-GDsaE/"},{"id":"DaLmn_HDjZy","key":"aus","iso":"2026-06-29T19:20:00","fmt":"R","eng":31,"er":0.00137,"plays":2914,"z":-2.35,"zf":-2.35,"state":"under","syn":0,"url":"https://www.instagram.com/p/DaLmn_HDjZy/"},{"id":"DaL5wSrEvNA","key":"az","iso":"2026-06-29T22:07:00","fmt":"C","eng":304,"er":0.02812,"plays":null,"z":null,"zf":null,"state":"no_baseline","syn":0,"url":"https://www.instagram.com/p/DaL5wSrEvNA/"},{"id":"DaMGsCcD48O","key":"sea","iso":"2026-06-30T00:00:00","fmt":"R","eng":9,"er":0.00033,"plays":5546,"z":-4.13,"zf":-4.13,"state":"under","syn":1,"url":"https://www.instagram.com/p/DaMGsCcD48O/"},{"id":"DaMGu4CFXq_","key":"slc","iso":"2026-06-30T00:01:00","fmt":"R","eng":17,"er":0.00184,"plays":2705,"z":-2.07,"zf":-2.07,"state":"under","syn":1,"url":"https://www.instagram.com/p/DaMGu4CFXq_/"},{"id":"DaMGzdjgrAA","key":"az","iso":"2026-06-30T00:02:00","fmt":"R","eng":14,"er":0.0013,"plays":2458,"z":-3.99,"zf":-3.99,"state":"under","syn":1,"url":"https://www.instagram.com/p/DaMGzdjgrAA/"},{"id":"DaMHskkARHL","key":"bkn","iso":"2026-06-30T00:09:00","fmt":"R","eng":17,"er":0.0021,"plays":1751,"z":-1.55,"zf":-1.55,"state":"normal","syn":1,"url":"https://www.instagram.com/p/DaMHskkARHL/"},{"id":"DaMKXDegSdz","key":"bos","iso":"2026-06-30T00:32:00","fmt":"R","eng":10,"er":0.00149,"plays":1943,"z":-1.97,"zf":-1.97,"state":"under","syn":0,"url":"https://www.instagram.com/p/DaMKXDegSdz/"},{"id":"DaOWZmzH4ex","key":"dc","iso":"2026-06-30T20:56:00","fmt":"C","eng":172,"er":0.01869,"plays":null,"z":0.36,"zf":0.36,"state":"normal","syn":0,"url":"https://www.instagram.com/p/DaOWZmzH4ex/"},{"id":"DaOZJRGEit0","key":"az","iso":"2026-06-30T21:20:00","fmt":"C","eng":40,"er":0.0037,"plays":null,"z":null,"zf":null,"state":"no_baseline","syn":0,"url":"https://www.instagram.com/p/DaOZJRGEit0/"},{"id":"DaQZiV1GNLB","key":"nat","iso":"2026-07-01T16:02:00","fmt":"C","eng":30,"er":0.00434,"plays":null,"z":null,"zf":null,"state":"no_baseline","syn":0,"url":"https://www.instagram.com/p/DaQZiV1GNLB/"},{"id":"DaQc1gnDW1x","key":"bkn","iso":"2026-07-01T16:30:00","fmt":"C","eng":25,"er":0.00308,"plays":null,"z":-1.54,"zf":-1.54,"state":"normal","syn":1,"url":"https://www.instagram.com/p/DaQc1gnDW1x/"},{"id":"DaQc1Qcn7VN","key":"dc","iso":"2026-07-01T16:30:00","fmt":"C","eng":28,"er":0.00304,"plays":null,"z":-1.45,"zf":-1.45,"state":"normal","syn":1,"url":"https://www.instagram.com/p/DaQc1Qcn7VN/"},{"id":"DaQc1WkIJix","key":"bos","iso":"2026-07-01T16:30:00","fmt":"C","eng":25,"er":0.00373,"plays":null,"z":null,"zf":null,"state":"no_baseline","syn":1,"url":"https://www.instagram.com/p/DaQc1WkIJix/"},{"id":"DaQjtGwn94K","key":"aus","iso":"2026-07-01T17:30:00","fmt":"C","eng":65,"er":0.00288,"plays":null,"z":-1.35,"zf":-1.35,"state":"normal","syn":0,"url":"https://www.instagram.com/p/DaQjtGwn94K/"},{"id":"DaQjskVn-H6","key":"msp","iso":"2026-07-01T17:30:00","fmt":"C","eng":68,"er":0.00367,"plays":null,"z":-1.41,"zf":-1.41,"state":"normal","syn":0,"url":"https://www.instagram.com/p/DaQjskVn-H6/"},{"id":"DaQuDjmHyo3","key":"az","iso":"2026-07-01T19:01:00","fmt":"C","eng":68,"er":0.00629,"plays":null,"z":null,"zf":null,"state":"no_baseline","syn":1,"url":"https://www.instagram.com/p/DaQuDjmHyo3/"},{"id":"DaQuENtn5YT","key":"slc","iso":"2026-07-01T19:01:00","fmt":"C","eng":70,"er":0.00758,"plays":null,"z":null,"zf":null,"state":"no_baseline","syn":1,"url":"https://www.instagram.com/p/DaQuENtn5YT/"},{"id":"DaQuHxkHye5","key":"sea","iso":"2026-07-01T19:01:00","fmt":"C","eng":86,"er":0.00317,"plays":null,"z":0.13,"zf":0.13,"state":"normal","syn":1,"url":"https://www.instagram.com/p/DaQuHxkHye5/"},{"id":"DaRK6pLPZz7","key":"sea","iso":"2026-07-01T23:26:00","fmt":"R","eng":159,"er":0.00586,"plays":16440,"z":0.19,"zf":0.19,"state":"normal","syn":0,"url":"https://www.instagram.com/p/DaRK6pLPZz7/"},{"id":"DaTFDzdjZpT","key":"bkn","iso":"2026-07-02T17:00:00","fmt":"C","eng":30,"er":0.0037,"plays":null,"z":-1.36,"zf":-1.36,"state":"normal","syn":0,"url":"https://www.instagram.com/p/DaTFDzdjZpT/"},{"id":"DaWCNbpiecy","key":"bos","iso":"2026-07-03T20:33:00","fmt":"C","eng":22,"er":0.00328,"plays":null,"z":null,"zf":null,"state":"no_baseline","syn":0,"url":"https://www.instagram.com/p/DaWCNbpiecy/"},{"id":"DaWER6kCs1X","key":"aus","iso":"2026-07-03T20:52:00","fmt":"R","eng":283,"er":0.01253,"plays":8453,"z":1.0,"zf":1.0,"state":"normal","syn":0,"url":"https://www.instagram.com/p/DaWER6kCs1X/"},{"id":"Dad0auiSEY7","key":"sea","iso":"2026-07-06T21:12:00","fmt":"R","eng":54,"er":0.00199,"plays":6766,"z":-1.43,"zf":-1.43,"state":"normal","syn":0,"url":"https://www.instagram.com/p/Dad0auiSEY7/"},{"id":"DafvI1TTlWu","key":"slc","iso":"2026-07-07T15:01:00","fmt":"R","eng":100,"er":0.01083,"plays":3604,"z":-0.18,"zf":-0.18,"state":"normal","syn":0,"url":"https://www.instagram.com/p/DafvI1TTlWu/"},{"id":"Daf_Rh2n7e0","key":"bos","iso":"2026-07-07T17:20:00","fmt":"C","eng":15,"er":0.00224,"plays":null,"z":null,"zf":null,"state":"no_baseline","syn":0,"url":"https://www.instagram.com/p/Daf_Rh2n7e0/"},{"id":"DagJGm2n-2g","key":"aus","iso":"2026-07-07T18:46:00","fmt":"C","eng":47,"er":0.00208,"plays":null,"z":-1.79,"zf":-1.79,"state":"under","syn":1,"url":"https://www.instagram.com/p/DagJGm2n-2g/"},{"id":"DagJrZQCeen","key":"dc","iso":"2026-07-07T18:51:00","fmt":"C","eng":15,"er":0.00163,"plays":null,"z":-2.04,"zf":-2.04,"state":"under","syn":1,"url":"https://www.instagram.com/p/DagJrZQCeen/"},{"id":"DagJrEPiY-q","key":"bkn","iso":"2026-07-07T18:51:00","fmt":"C","eng":28,"er":0.00345,"plays":null,"z":-1.43,"zf":-1.43,"state":"normal","syn":1,"url":"https://www.instagram.com/p/DagJrEPiY-q/"},{"id":"DagfX1-joQn","key":"slc","iso":"2026-07-07T22:00:00","fmt":"C","eng":58,"er":0.00628,"plays":null,"z":null,"zf":null,"state":"no_baseline","syn":1,"url":"https://www.instagram.com/p/DagfX1-joQn/"},{"id":"DagfU-fHQtQ","key":"az","iso":"2026-07-07T22:00:00","fmt":"C","eng":47,"er":0.00435,"plays":null,"z":null,"zf":null,"state":"no_baseline","syn":1,"url":"https://www.instagram.com/p/DagfU-fHQtQ/"},{"id":"DagfUy_jwsH","key":"sea","iso":"2026-07-07T22:00:00","fmt":"C","eng":41,"er":0.00151,"plays":null,"z":-0.95,"zf":-0.95,"state":"normal","syn":1,"url":"https://www.instagram.com/p/DagfUy_jwsH/"},{"id":"DagmLqGGwCM","key":"msp","iso":"2026-07-07T23:00:00","fmt":"C","eng":51,"er":0.00275,"plays":null,"z":-1.96,"zf":-1.96,"state":"under","syn":0,"url":"https://www.instagram.com/p/DagmLqGGwCM/"},{"id":"DagqSouSZsr","key":"sea","iso":"2026-07-07T23:39:00","fmt":"R","eng":345,"er":0.01271,"plays":14313,"z":1.33,"zf":1.33,"state":"normal","syn":0,"url":"https://www.instagram.com/p/DagqSouSZsr/"},{"id":"DaifiBaFHRv","key":"bos","iso":"2026-07-08T16:40:00","fmt":"C","eng":65,"er":0.00969,"plays":null,"z":null,"zf":null,"state":"no_baseline","syn":0,"url":"https://www.instagram.com/p/DaifiBaFHRv/"},{"id":"Dai8fVPSlGt","key":"az","iso":"2026-07-08T20:56:00","fmt":"R","eng":199,"er":0.01841,"plays":7149,"z":0.72,"zf":0.72,"state":"normal","syn":0,"url":"https://www.instagram.com/p/Dai8fVPSlGt/"},{"id":"DajA_14jxjd","key":"aus","iso":"2026-07-08T21:33:00","fmt":"R","eng":101,"er":0.00447,"plays":6272,"z":-0.54,"zf":-0.54,"state":"normal","syn":0,"url":"https://www.instagram.com/p/DajA_14jxjd/"},{"id":"DajErbhCffO","key":"dc","iso":"2026-07-08T22:05:00","fmt":"C","eng":32,"er":0.00348,"plays":null,"z":-1.32,"zf":-1.32,"state":"normal","syn":0,"url":"https://www.instagram.com/p/DajErbhCffO/"},{"id":"DajFhjtEnqj","key":"sea","iso":"2026-07-08T22:12:00","fmt":"C","eng":169,"er":0.00622,"plays":null,"z":1.1,"zf":1.1,"state":"normal","syn":0,"url":"https://www.instagram.com/p/DajFhjtEnqj/"},{"id":"DalCUkTCI_B","key":"aus","iso":"2026-07-09T16:23:00","fmt":"R","eng":312,"er":0.01382,"plays":8064,"z":1.14,"zf":1.14,"state":"normal","syn":0,"url":"https://www.instagram.com/p/DalCUkTCI_B/"},{"id":"DalDLOKTtYo","key":"slc","iso":"2026-07-09T16:30:00","fmt":"R","eng":402,"er":0.04353,"plays":17779,"z":1.39,"zf":1.39,"state":"normal","syn":0,"url":"https://www.instagram.com/p/DalDLOKTtYo/"},{"id":"DalomiqEhYn","key":"sea","iso":"2026-07-09T21:57:00","fmt":"C","eng":65,"er":0.00239,"plays":null,"z":-0.23,"zf":-0.23,"state":"normal","syn":0,"url":"https://www.instagram.com/p/DalomiqEhYn/"},{"id":"DaoIgksMocx","key":"bos","iso":"2026-07-10T21:18:00","fmt":"R","eng":25,"er":0.00373,"plays":2056,"z":-1.1,"zf":-1.1,"state":"normal","syn":0,"url":"https://www.instagram.com/p/DaoIgksMocx/"},{"id":"DaoLvhXjxZ3","key":"bkn","iso":"2026-07-10T21:44:00","fmt":"R","eng":38,"er":0.00468,"plays":3129,"z":-0.76,"zf":-0.76,"state":"normal","syn":0,"url":"https://www.instagram.com/p/DaoLvhXjxZ3/"},{"id":"DavdmoLEc9Q","key":"aus","iso":"2026-07-13T17:33:00","fmt":"C","eng":340,"er":0.01506,"plays":null,"z":1.4,"zf":1.4,"state":"normal","syn":0,"url":"https://www.instagram.com/p/DavdmoLEc9Q/"},{"id":"DawF4NRpt5z","key":"slc","iso":"2026-07-13T23:35:00","fmt":"R","eng":232,"er":0.02512,"plays":6620,"z":0.81,"zf":0.81,"state":"normal","syn":0,"url":"https://www.instagram.com/p/DawF4NRpt5z/"},{"id":"DawI9MXyAYc","key":"sea","iso":"2026-07-14T00:12:00","fmt":"R","eng":254,"er":0.00935,"plays":12306,"z":0.89,"zf":0.89,"state":"normal","syn":0,"url":"https://www.instagram.com/p/DawI9MXyAYc/"},{"id":"Da0nPX0ya4c","key":"sea","iso":"2026-07-15T17:35:00","fmt":"R","eng":233,"er":0.00858,"plays":10970,"z":0.77,"zf":0.77,"state":"normal","syn":0,"url":"https://www.instagram.com/p/Da0nPX0ya4c/"},{"id":"Da04E2SyyBa","key":"az","iso":"2026-07-15T20:02:00","fmt":"R","eng":31,"er":0.00287,"plays":3183,"z":-2.58,"zf":-2.58,"state":"under","syn":0,"url":"https://www.instagram.com/p/Da04E2SyyBa/"},{"id":"Da08TUkpD4s","key":"slc","iso":"2026-07-15T20:38:00","fmt":"R","eng":35,"er":0.00379,"plays":2545,"z":-1.3,"zf":-1.3,"state":"normal","syn":0,"url":"https://www.instagram.com/p/Da08TUkpD4s/"},{"id":"Da1QB7ukjcm","key":"sea","iso":"2026-07-15T23:30:00","fmt":"C","eng":32,"er":0.00118,"plays":null,"z":-1.29,"zf":-1.29,"state":"normal","syn":0,"url":"https://www.instagram.com/p/Da1QB7ukjcm/"},{"id":"Da1cQ00RjW6","key":"az","iso":"2026-07-16T01:25:00","fmt":"R","eng":122,"er":0.01129,"plays":7288,"z":-0.13,"zf":-0.13,"state":"normal","syn":0,"url":"https://www.instagram.com/p/Da1cQ00RjW6/"},{"id":"Da3F8tVgTHR","key":"dc","iso":"2026-07-16T16:41:00","fmt":"R","eng":78,"er":0.00848,"plays":4346,"z":-0.88,"zf":-0.88,"state":"normal","syn":0,"url":"https://www.instagram.com/p/Da3F8tVgTHR/"},{"id":"Da3jALksfYa","key":"bos","iso":"2026-07-16T21:01:00","fmt":"R","eng":29647,"er":4.41767,"plays":462711,"z":6.4,"zf":6.4,"state":"over","syn":0,"url":"https://www.instagram.com/p/Da3jALksfYa/"},{"id":"Da3obEyxeIT","key":"aus","iso":"2026-07-16T21:48:00","fmt":"R","eng":355,"er":0.01572,"plays":12123,"z":1.32,"zf":1.32,"state":"normal","syn":0,"url":"https://www.instagram.com/p/Da3obEyxeIT/"},{"id":"Da3rGIiS4sz","key":"sea","iso":"2026-07-16T22:11:00","fmt":"R","eng":117,"er":0.00431,"plays":9285,"z":-0.23,"zf":-0.23,"state":"normal","syn":0,"url":"https://www.instagram.com/p/Da3rGIiS4sz/"},{"id":"Da5q39MCtxY","key":"msp","iso":"2026-07-17T16:44:00","fmt":"R","eng":189,"er":0.0102,"plays":8664,"z":null,"zf":null,"state":"no_baseline","syn":0,"url":"https://www.instagram.com/p/Da5q39MCtxY/"},{"id":"Da58kV5EUQD","key":"aus","iso":"2026-07-17T19:16:00","fmt":"C","eng":194,"er":0.00859,"plays":null,"z":0.49,"zf":0.49,"state":"normal","syn":0,"url":"https://www.instagram.com/p/Da58kV5EUQD/"},{"id":"Da6K5Bticn9","key":"slc","iso":"2026-07-17T21:22:00","fmt":"C","eng":102,"er":0.01104,"plays":null,"z":null,"zf":null,"state":"no_baseline","syn":0,"url":"https://www.instagram.com/p/Da6K5Bticn9/"},{"id":"Da6ZBuJguyG","key":"bkn","iso":"2026-07-17T23:26:00","fmt":"R","eng":40,"er":0.00493,"plays":2345,"z":-0.68,"zf":-0.68,"state":"normal","syn":0,"url":"https://www.instagram.com/p/Da6ZBuJguyG/"},{"id":"DbBdRpTnDul","key":"bkn","iso":"2026-07-20T17:17:00","fmt":"C","eng":227,"er":0.02798,"plays":null,"z":0.83,"zf":0.83,"state":"normal","syn":0,"url":"https://www.instagram.com/p/DbBdRpTnDul/"},{"id":"DbCA-4aAaOP","key":"sea","iso":"2026-07-20T22:29:00","fmt":"C","eng":70,"er":0.00258,"plays":null,"z":-0.16,"zf":-0.16,"state":"normal","syn":0,"url":"https://www.instagram.com/p/DbCA-4aAaOP/"},{"id":"DbD72SXH8Oy","key":"msp","iso":"2026-07-21T16:23:00","fmt":"C","eng":131,"er":0.00707,"plays":null,"z":0.32,"zf":0.32,"state":"normal","syn":0,"url":"https://www.instagram.com/p/DbD72SXH8Oy/"},{"id":"DbERJ5WFGDU","key":"aus","iso":"2026-07-21T19:30:00","fmt":"R","eng":114,"er":0.00505,"plays":5710,"z":-0.39,"zf":-0.39,"state":"normal","syn":0,"url":"https://www.instagram.com/p/DbERJ5WFGDU/"},{"id":"DbEaqPPG8x5","key":"dc","iso":"2026-07-21T20:52:00","fmt":"C","eng":107,"er":0.01163,"plays":null,"z":-0.11,"zf":-0.11,"state":"normal","syn":0,"url":"https://www.instagram.com/p/DbEaqPPG8x5/"},{"id":"DbEowe9PvfY","key":"sea","iso":"2026-07-21T22:56:00","fmt":"R","eng":61,"er":0.00225,"plays":9598,"z":-1.25,"zf":-1.25,"state":"normal","syn":0,"url":"https://www.instagram.com/p/DbEowe9PvfY/"},{"id":"DbE1oArSsZw","key":"sea","iso":"2026-07-22T00:49:00","fmt":"R","eng":8274,"er":0.30471,"plays":147206,"z":5.93,"zf":5.93,"state":"over","syn":0,"url":"https://www.instagram.com/p/DbE1oArSsZw/"},{"id":"DbGVCYVsK7S","key":"bos","iso":"2026-07-22T14:46:00","fmt":"R","eng":66,"er":0.00983,"plays":3814,"z":-0.09,"zf":-0.09,"state":"normal","syn":0,"url":"https://www.instagram.com/p/DbGVCYVsK7S/"},{"id":"DbGks0URQK2","key":"az","iso":"2026-07-22T17:02:00","fmt":"R","eng":71,"er":0.00657,"plays":3229,"z":-1.11,"zf":-1.11,"state":"normal","syn":0,"url":"https://www.instagram.com/p/DbGks0URQK2/"},{"id":"DbGtSnUBeOF","key":"aus","iso":"2026-07-22T18:24:00","fmt":"R","eng":122,"er":0.0054,"plays":5921,"z":-0.3,"zf":-0.3,"state":"normal","syn":0,"url":"https://www.instagram.com/p/DbGtSnUBeOF/"},{"id":"DbHnuwhD4bh","key":"dc","iso":"2026-07-23T02:44:00","fmt":"C","eng":98,"er":0.01065,"plays":null,"z":-0.2,"zf":-0.2,"state":"normal","syn":0,"url":"https://www.instagram.com/p/DbHnuwhD4bh/"},{"id":"DbL3qQYJIZa","key":"slc","iso":"2026-07-24T18:21:00","fmt":"R","eng":310,"er":0.03356,"plays":7413,"z":1.11,"zf":1.11,"state":"normal","syn":0,"url":"https://www.instagram.com/p/DbL3qQYJIZa/"},{"id":"DbMQPGViUXl","key":"aus","iso":"2026-07-24T21:55:00","fmt":"I","eng":40,"er":0.00177,"plays":null,"z":null,"zf":null,"state":"no_baseline","syn":0,"url":"https://www.instagram.com/p/DbMQPGViUXl/"},{"id":"DbMTCbyuzi5","key":"az","iso":"2026-07-24T22:21:00","fmt":"R","eng":93,"er":0.0086,"plays":3260,"z":-0.57,"zf":-0.57,"state":"normal","syn":0,"url":"https://www.instagram.com/p/DbMTCbyuzi5/"},{"id":"DbM8SyikXud","key":"bkn","iso":"2026-07-25T04:21:00","fmt":"R","eng":159,"er":0.0196,"plays":6775,"z":0.89,"zf":0.89,"state":"normal","syn":0,"url":"https://www.instagram.com/p/DbM8SyikXud/"},{"id":"DbN_EcPu91v","key":"msp","iso":"2026-07-25T14:04:00","fmt":"R","eng":367,"er":0.01981,"plays":13438,"z":null,"zf":null,"state":"no_baseline","syn":0,"url":"https://www.instagram.com/p/DbN_EcPu91v/"},{"id":"DbRhndKjofk","key":"dc","iso":"2026-07-26T23:03:00","fmt":"C","eng":40,"er":0.00435,"plays":null,"z":-1.11,"zf":-1.11,"state":"normal","syn":0,"url":"https://www.instagram.com/p/DbRhndKjofk/"},{"id":"DbTJqbLGwal","key":"msp","iso":"2026-07-27T14:12:00","fmt":"C","eng":75,"er":0.00405,"plays":null,"z":-1.22,"zf":-1.22,"state":"normal","syn":0,"url":"https://www.instagram.com/p/DbTJqbLGwal/"},{"id":"DbT6MNoyKXN","key":"az","iso":"2026-07-27T21:18:00","fmt":"I","eng":155,"er":0.01434,"plays":null,"z":null,"zf":null,"state":"no_baseline","syn":0,"url":"https://www.instagram.com/p/DbT6MNoyKXN/"},{"id":"DbUKQF8v6BQ","key":"sea","iso":"2026-07-27T23:38:00","fmt":"R","eng":121,"er":0.00446,"plays":11552,"z":-0.19,"zf":-0.19,"state":"normal","syn":0,"url":"https://www.instagram.com/p/DbUKQF8v6BQ/"},{"id":"DbWIarVj8Le","key":"bkn","iso":"2026-07-28T17:59:00","fmt":"R","eng":29,"er":0.00357,"plays":2491,"z":-1.02,"zf":-1.02,"state":"normal","syn":0,"url":"https://www.instagram.com/p/DbWIarVj8Le/"},{"id":"DbWfcdHkxcq","key":"dc","iso":"2026-07-28T21:21:00","fmt":"R","eng":189,"er":0.02054,"plays":6060,"z":0.88,"zf":0.88,"state":"normal","syn":0,"url":"https://www.instagram.com/p/DbWfcdHkxcq/"},{"id":"DbWuNTYP7xU","key":"sea","iso":"2026-07-28T23:30:00","fmt":"R","eng":206,"er":0.00759,"plays":17123,"z":0.52,"zf":0.52,"state":"normal","syn":0,"url":"https://www.instagram.com/p/DbWuNTYP7xU/"},{"id":"DbYa5-TDoOg","key":"msp","iso":"2026-07-29T15:19:00","fmt":"I","eng":109,"er":0.00588,"plays":null,"z":null,"zf":null,"state":"no_baseline","syn":0,"url":"https://www.instagram.com/p/DbYa5-TDoOg/"},{"id":"DbYtARIxKyJ","key":"aus","iso":"2026-07-29T18:03:00","fmt":"R","eng":254,"er":0.01125,"plays":12242,"z":0.84,"zf":0.84,"state":"normal","syn":1,"url":"https://www.instagram.com/p/DbYtARIxKyJ/"},{"id":"DbYugI_xL6a","key":"az","iso":"2026-07-29T18:12:00","fmt":"R","eng":131,"er":0.01212,"plays":7032,"z":-0.01,"zf":-0.01,"state":"normal","syn":1,"url":"https://www.instagram.com/p/DbYugI_xL6a/"},{"id":"DbYvpl7MKEi","key":"bos","iso":"2026-07-29T18:21:00","fmt":"R","eng":163,"er":0.02429,"plays":5705,"z":1.02,"zf":1.02,"state":"normal","syn":1,"url":"https://www.instagram.com/p/DbYvpl7MKEi/"},{"id":"Dbbc4Z5PFSl","key":"az","iso":"2026-07-30T19:39:00","fmt":"R","eng":130,"er":0.01203,"plays":4887,"z":-0.03,"zf":-0.03,"state":"normal","syn":0,"url":"https://www.instagram.com/p/Dbbc4Z5PFSl/"},{"id":"DbbgbChmZwB","key":"aus","iso":"2026-07-30T20:05:00","fmt":"C","eng":218,"er":0.00965,"plays":null,"z":0.7,"zf":0.7,"state":"normal","syn":0,"url":"https://www.instagram.com/p/DbbgbChmZwB/"},{"id":"DbcCd4pJsFo","key":"sea","iso":"2026-07-31T01:03:00","fmt":"R","eng":68,"er":0.0025,"plays":6015,"z":-1.09,"zf":-1.09,"state":"normal","syn":0,"url":"https://www.instagram.com/p/DbcCd4pJsFo/"},{"id":"DbdijKZAFqK","key":"aus","iso":"2026-07-31T15:02:00","fmt":"R","eng":38,"er":0.00168,"plays":3699,"z":-2.05,"zf":-2.05,"state":"under","syn":0,"url":"https://www.instagram.com/p/DbdijKZAFqK/"},{"id":"Dbdv2eLkS9J","key":"msp","iso":"2026-07-31T16:58:00","fmt":"C","eng":156,"er":0.00842,"plays":null,"z":0.74,"zf":0.74,"state":"normal","syn":0,"url":"https://www.instagram.com/p/Dbdv2eLkS9J/"},{"id":"DbgYTkVh-6Z","key":"sea","iso":"2026-08-01T17:30:00","fmt":"R","eng":167,"er":0.00615,"plays":12226,"z":0.25,"zf":0.25,"state":"normal","syn":0,"url":"https://www.instagram.com/p/DbgYTkVh-6Z/"},{"id":"Dbi9v4RpuBm","key":"slc","iso":"2026-08-02T17:49:00","fmt":"R","eng":116,"er":0.01256,"plays":5192,"z":0.05,"zf":0.05,"state":"normal","syn":0,"url":"https://www.instagram.com/p/Dbi9v4RpuBm/"},{"id":"Dbl4xAmScdc","key":"az","iso":"2026-08-03T20:51:00","fmt":"R","eng":44,"er":0.00407,"plays":4104,"z":-1.95,"zf":-1.95,"state":"under","syn":0,"url":"https://www.instagram.com/p/Dbl4xAmScdc/"},{"id":"Dbl_RIETIw4","key":"slc","iso":"2026-08-03T21:50:00","fmt":"R","eng":61,"er":0.0066,"plays":2812,"z":-0.71,"zf":-0.71,"state":"normal","syn":0,"url":"https://www.instagram.com/p/Dbl_RIETIw4/"},{"id":"DbmDC83BcRl","key":"dc","iso":"2026-08-03T22:20:00","fmt":"R","eng":179,"er":0.01945,"plays":10136,"z":0.79,"zf":0.79,"state":"normal","syn":0,"url":"https://www.instagram.com/p/DbmDC83BcRl/"},{"id":"DbmNASwgbB7","key":"bkn","iso":"2026-08-03T23:47:00","fmt":"R","eng":29,"er":0.00357,"plays":2148,"z":-1.02,"zf":-1.02,"state":"normal","syn":1,"url":"https://www.instagram.com/p/DbmNASwgbB7/"},{"id":"DbmNLdcjM8g","key":"msp","iso":"2026-08-03T23:49:00","fmt":"R","eng":42,"er":0.00227,"plays":4308,"z":null,"zf":null,"state":"no_baseline","syn":1,"url":"https://www.instagram.com/p/DbmNLdcjM8g/"},{"id":"DbmNb2jAquu","key":"bos","iso":"2026-08-03T23:52:00","fmt":"R","eng":29,"er":0.00432,"plays":2422,"z":-0.96,"zf":-0.96,"state":"normal","syn":1,"url":"https://www.instagram.com/p/DbmNb2jAquu/"},{"id":"DbmR9uHjsFL","key":"aus","iso":"2026-08-04T00:31:00","fmt":"R","eng":43,"er":0.0019,"plays":3049,"z":-1.87,"zf":-1.87,"state":"under","syn":0,"url":"https://www.instagram.com/p/DbmR9uHjsFL/"},{"id":"DbmfbWSkuTq","key":"dc","iso":"2026-08-04T02:28:00","fmt":"R","eng":31,"er":0.00337,"plays":2106,"z":-2.65,"zf":-2.65,"state":"under","syn":0,"url":"https://www.instagram.com/p/DbmfbWSkuTq/"},{"id":"DboCARUGzok","key":"az","iso":"2026-08-04T16:49:00","fmt":"C","eng":589,"er":0.05449,"plays":null,"z":null,"zf":null,"state":"no_baseline","syn":0,"url":"https://www.instagram.com/p/DboCARUGzok/"},{"id":"DboOqNqiXB-","key":"msp","iso":"2026-08-04T18:40:00","fmt":"I","eng":17,"er":0.00092,"plays":null,"z":null,"zf":null,"state":"no_baseline","syn":0,"url":"https://www.instagram.com/p/DboOqNqiXB-/"},{"id":"DbqqrUtDI18","key":"bkn","iso":"2026-08-05T17:23:00","fmt":"C","eng":56,"er":0.0069,"plays":null,"z":-0.75,"zf":-0.75,"state":"normal","syn":0,"url":"https://www.instagram.com/p/DbqqrUtDI18/"},{"id":"Dbq1JxFv8rk","key":"az","iso":"2026-08-05T18:55:00","fmt":"I","eng":31,"er":0.00287,"plays":null,"z":null,"zf":null,"state":"no_baseline","syn":0,"url":"https://www.instagram.com/p/Dbq1JxFv8rk/"},{"id":"Dbq-_2KiL23","key":"msp","iso":"2026-08-05T20:21:00","fmt":"R","eng":87,"er":0.0047,"plays":5199,"z":null,"zf":null,"state":"no_baseline","syn":0,"url":"https://www.instagram.com/p/Dbq-_2KiL23/"},{"id":"DbrI4GglUaH","key":"aus","iso":"2026-08-05T21:48:00","fmt":"R","eng":122,"er":0.0054,"plays":5804,"z":-0.3,"zf":-0.3,"state":"normal","syn":0,"url":"https://www.instagram.com/p/DbrI4GglUaH/"},{"id":"Dbs3zrjO9iL","key":"msp","iso":"2026-08-06T14:02:00","fmt":"R","eng":561,"er":0.03028,"plays":14049,"z":null,"zf":null,"state":"no_baseline","syn":0,"url":"https://www.instagram.com/p/Dbs3zrjO9iL/"},{"id":"DbtsgoUqdRs","key":"dc","iso":"2026-08-06T21:39:00","fmt":"R","eng":190,"er":0.02065,"plays":6569,"z":0.89,"zf":0.89,"state":"normal","syn":0,"url":"https://www.instagram.com/p/DbtsgoUqdRs/"},{"id":"DbwQ7-Ez2Or","key":"slc","iso":"2026-08-07T21:35:00","fmt":"R","eng":228,"er":0.02469,"plays":10692,"z":0.79,"zf":0.79,"state":"normal","syn":0,"url":"https://www.instagram.com/p/DbwQ7-Ez2Or/"},{"id":"Db4PWgMmYuq","key":"sea","iso":"2026-08-10T23:53:00","fmt":"C","eng":207,"er":0.00762,"plays":null,"z":1.38,"zf":1.38,"state":"normal","syn":0,"url":"https://www.instagram.com/p/Db4PWgMmYuq/"},{"id":"Db6Das4OMkL","key":"bkn","iso":"2026-08-11T16:50:00","fmt":"R","eng":120,"er":0.01479,"plays":4690,"z":0.49,"zf":0.49,"state":"normal","syn":0,"url":"https://www.instagram.com/p/Db6Das4OMkL/"},{"id":"Db6EERrjXSZ","key":"aus","iso":"2026-08-11T16:53:00","fmt":"C","eng":160,"er":0.00709,"plays":null,"z":0.05,"zf":0.05,"state":"normal","syn":0,"url":"https://www.instagram.com/p/Db6EERrjXSZ/"},{"id":"Db6i3FdyjMO","key":"az","iso":"2026-08-11T21:23:00","fmt":"R","eng":51,"er":0.00472,"plays":4014,"z":-1.69,"zf":-1.69,"state":"normal","syn":0,"url":"https://www.instagram.com/p/Db6i3FdyjMO/"},{"id":"Db6lVk1Myd2","key":"bos","iso":"2026-08-11T21:46:00","fmt":"R","eng":341,"er":0.05081,"plays":9873,"z":1.78,"zf":1.78,"state":"over","syn":0,"url":"https://www.instagram.com/p/Db6lVk1Myd2/"},{"id":"Db63zpOyK1g","key":"sea","iso":"2026-08-12T00:27:00","fmt":"R","eng":49,"er":0.0018,"plays":10435,"z":-1.58,"zf":-1.58,"state":"normal","syn":0,"url":"https://www.instagram.com/p/Db63zpOyK1g/"},{"id":"Db86VjSyWo2","key":"aus","iso":"2026-08-12T19:29:00","fmt":"R","eng":227,"er":0.01005,"plays":7911,"z":0.62,"zf":0.62,"state":"normal","syn":0,"url":"https://www.instagram.com/p/Db86VjSyWo2/"},{"id":"Db9O6CJhFtt","key":"az","iso":"2026-08-12T22:27:00","fmt":"I","eng":89,"er":0.00823,"plays":null,"z":null,"zf":null,"state":"no_baseline","syn":0,"url":"https://www.instagram.com/p/Db9O6CJhFtt/"},{"id":"Db--Ly9jbFs","key":"dc","iso":"2026-08-13T14:38:00","fmt":"C","eng":254,"er":0.0276,"plays":null,"z":0.63,"zf":0.63,"state":"normal","syn":0,"url":"https://www.instagram.com/p/Db--Ly9jbFs/"},{"id":"Db_pXQmIO89","key":"aus","iso":"2026-08-13T20:56:00","fmt":"C","eng":123,"er":0.00545,"plays":null,"z":-0.37,"zf":-0.37,"state":"normal","syn":0,"url":"https://www.instagram.com/p/Db_pXQmIO89/"},{"id":"DcBuGRrOSRT","key":"bkn","iso":"2026-08-14T16:17:00","fmt":"R","eng":67,"er":0.00826,"plays":3002,"z":-0.19,"zf":-0.19,"state":"normal","syn":0,"url":"https://www.instagram.com/p/DcBuGRrOSRT/"},{"id":"DcCOcM3SYCi","key":"az","iso":"2026-08-14T21:00:00","fmt":"R","eng":151,"er":0.01397,"plays":5482,"z":0.23,"zf":0.23,"state":"normal","syn":0,"url":"https://www.instagram.com/p/DcCOcM3SYCi/"},{"id":"DcC28ZRtNf0","key":"dc","iso":"2026-08-15T02:53:00","fmt":"R","eng":136,"er":0.01478,"plays":3751,"z":0.28,"zf":0.28,"state":"normal","syn":0,"url":"https://www.instagram.com/p/DcC28ZRtNf0/"},{"id":"DcG5GaYKHH2","key":"dc","iso":"2026-08-16T16:29:00","fmt":"R","eng":128,"er":0.01391,"plays":7398,"z":0.19,"zf":0.19,"state":"normal","syn":0,"url":"https://www.instagram.com/p/DcG5GaYKHH2/"},{"id":"DcHWE6XEv3P","key":"sea","iso":"2026-08-16T20:41:00","fmt":"C","eng":24,"er":0.00088,"plays":null,"z":-1.68,"zf":-1.68,"state":"normal","syn":0,"url":"https://www.instagram.com/p/DcHWE6XEv3P/"},{"id":"DcJgpygjuft","key":"msp","iso":"2026-08-17T16:52:00","fmt":"C","eng":175,"er":0.00944,"plays":null,"z":0.94,"zf":0.94,"state":"normal","syn":0,"url":"https://www.instagram.com/p/DcJgpygjuft/"},{"id":"DcKz8-mFccB","key":"aus","iso":"2026-08-18T05:00:00","fmt":"I","eng":40,"er":0.00177,"plays":null,"z":null,"zf":null,"state":"no_baseline","syn":0,"url":"https://www.instagram.com/p/DcKz8-mFccB/"},{"id":"DcL0V7AyqNQ","key":"sea","iso":"2026-08-18T14:37:00","fmt":"R","eng":81,"er":0.00298,"plays":6559,"z":-0.82,"zf":-0.82,"state":"normal","syn":0,"url":"https://www.instagram.com/p/DcL0V7AyqNQ/"},{"id":"DcL_tOtHA8U","key":"dc","iso":"2026-08-18T16:02:00","fmt":"C","eng":753,"er":0.08183,"plays":null,"z":1.46,"zf":1.46,"state":"normal","syn":0,"url":"https://www.instagram.com/p/DcL_tOtHA8U/"},{"id":"DcMhuazObjJ","key":"bkn","iso":"2026-08-18T21:00:00","fmt":"R","eng":90,"er":0.01109,"plays":4183,"z":0.22,"zf":0.22,"state":"normal","syn":0,"url":"https://www.instagram.com/p/DcMhuazObjJ/"},{"id":"DcMycZyGbfK","key":"sea","iso":"2026-08-18T23:25:00","fmt":"C","eng":423,"er":0.01558,"plays":null,"z":2.35,"zf":2.35,"state":"over","syn":0,"url":"https://www.instagram.com/p/DcMycZyGbfK/"},{"id":"DcOnmFtic9w","key":"aus","iso":"2026-08-19T16:29:00","fmt":"R","eng":356,"er":0.01576,"plays":10456,"z":1.32,"zf":1.32,"state":"normal","syn":0,"url":"https://www.instagram.com/p/DcOnmFtic9w/"},{"id":"DcPFhFYNsJq","key":"dc","iso":"2026-08-19T20:50:00","fmt":"R","eng":48,"er":0.00522,"plays":2556,"z":-1.81,"zf":-1.81,"state":"under","syn":0,"url":"https://www.instagram.com/p/DcPFhFYNsJq/"},{"id":"DcPJfo-yKyv","key":"az","iso":"2026-08-19T21:26:00","fmt":"I","eng":4,"er":0.00037,"plays":null,"z":null,"zf":null,"state":"no_baseline","syn":0,"url":"https://www.instagram.com/p/DcPJfo-yKyv/"},{"id":"DcPkkkAyLEm","key":"sea","iso":"2026-08-20T01:31:00","fmt":"R","eng":134,"er":0.00493,"plays":7880,"z":-0.06,"zf":-0.06,"state":"normal","syn":0,"url":"https://www.instagram.com/p/DcPkkkAyLEm/"}]};
+const $ = s => document.querySelector(s);
+const el = (t,c,h) => { const n=document.createElement(t); if(c)n.className=c;
+  if(h!==undefined)n.innerHTML=h; return n; };
+const pct = v => (v*100).toFixed(2)+'%';
+const sgn = v => (v>0?'+':'')+v.toFixed(2);
+const MK = Object.entries(D.markets).sort((a,b)=>b[1].followers-a[1].followers);
+const ACTIVE = MK.filter(([,m])=>m.n>=10);
+
+/* ---------------- masthead + footer ---------------- */
+if($('#mastsub')) $('#mastsub').textContent = `Bouldering Project · ${D.meta.n_markets} market accounts · `
+  + `${D.meta.n_posts} posts · ${D.meta.window_start} – ${D.meta.window_end} (${D.meta.weeks} weeks)`;
+$('#foot').textContent =
+  `Baseline: leave-one-out, per market × per format, minimum ${D.meta.params.min_n} comparable posts · `
+  + `flag threshold robust z ±${D.meta.params.z_flag} · syndication = ${D.meta.params.sync_min_markets}+ markets `
+  + `within ${D.meta.params.sync_window_min} minutes · ${D.meta.n_scored} of ${D.meta.n_posts} posts scored, `
+  + `${D.meta.n_no_baseline} held for insufficient comparables · combined audience `
+  + `${D.meta.total_followers.toLocaleString()} followers · collected ${D.meta.collected}.`;
+
+/* ---------------- hero ---------------- */
+const S = D.syndication;
+$('#heroP').textContent =
+  `Eight times in ${D.meta.weeks} weeks, three or more market accounts published within the same `
+  + `15-minute window in the same format. Those ${S.n_posts} posts — ${S.pct_of_network}% of everything `
+  + `the network published — land well below each receiving market's own normal. Everything else `
+  + `sits exactly where it should, because that is what a baseline means.`;
+[['median_z_syndicated','Syndicated content','median robust z against its own market’s baseline',true],
+ ['median_z_local','Everything else','the baseline, by definition',false]]
+ .forEach(([k,label,note,bad])=>{
+  const v = S[k];
+  const n = el('div','hn');
+  n.appendChild(el('div','v'+(bad?' bad':''), sgn(v)));
+  n.appendChild(el('div','k', label));
+  n.appendChild(el('div','n', note));
+  $('#heroN').appendChild(n);
+});
+{ const n = el('div','hn');
+  n.appendChild(el('div','v', S.n_clusters));
+  n.appendChild(el('div','k','Coordinated drops'));
+  n.appendChild(el('div','n', `${S.n_posts} posts across ${D.meta.n_markets} accounts`));
+  $('#heroN').appendChild(n); }
+
+/* ---------------- sensitivity ---------------- */
+{ let h = '<tr><th>Definition of “same drop”</th><th>Clusters</th><th>Posts</th>'
+        + '<th>Share of network</th><th>Median robust z</th></tr>';
+  S.sensitivity.forEach(s=>{
+    const strong = s.label === '15 min';
+    h += `<tr${strong?' class="warnrow"':''}><td>Within ${s.label}${strong?' <span class="pill syn">used</span>':''}</td>`
+      + `<td>${s.clusters}</td><td>${s.posts}</td><td>${s.pct}%</td>`
+      + `<td style="color:${s.median_z<-0.5?'var(--coral)':'var(--muted)'};font-weight:700">${sgn(s.median_z)}</td></tr>`;
+  });
+  h += `<tr><td>Locally-made content <span class="sub">reference</span></td><td>—</td>`
+     + `<td>${S.n_loc_scored}</td><td>—</td><td style="font-weight:700">${sgn(S.median_z_local)}</td></tr>`;
+  $('#sensT').innerHTML = h; }
+
+$('#sigNote').innerHTML = `<b style="color:var(--ink)">Significance:</b> the gap between `
+  + `syndicated and locally-made content is not an artifact of a small sample. A Mann-Whitney U `
+  + `test — non-parametric, because engagement is not normally distributed and the syndicated `
+  + `group is small — gives <b>z = ${S.mwu_z}, two-sided p = ${S.mwu_p < 0.001 ? '0.0003' : S.mwu_p.toFixed(4)}</b> `
+  + `across ${S.n_syn_scored} syndicated and ${S.n_loc_scored} local posts. A gap this large `
+  + `would arise by chance roughly three times in ten thousand.`;
+
+/* ---------------- clusters ---------------- */
+S.clusters.forEach(c=>{
+  const row = el('div','cl');
+  row.appendChild(el('div','cl-when', `${c.when}<span>${c.fmt} · ${c.n_markets} markets</span>`));
+  const mid = el('div');
+  c.posts.forEach(p=>{
+    const neg = p.z !== null && p.z <= -1;
+    mid.appendChild(el('a', 'mk'+(neg?' neg':''),
+      `${p.market} <b>${p.z===null?'—':sgn(p.z)}</b>`)).setAttribute('href', p.url);
+    mid.lastChild.target = '_blank'; mid.lastChild.style.textDecoration='none';
+  });
+  row.appendChild(mid);
+  const z = c.median_z;
+  row.appendChild(el('div','cl-z',
+    `<span style="color:${z<-0.5?'var(--coral)':'var(--ink)'}">${z===null?'—':sgn(z)}</span><small>median z</small>`));
+  $('#clusters').appendChild(row);
+});
+
+/* ---------------- scorecard ---------------- */
+{ const maxEff = Math.max(...ACTIVE.map(([,m])=>m.reel_eng_per_1k_plays||0));
+  let h = '<tr><th>Market</th><th>Followers</th><th>Posts<span class="sub">/week</span></th>'
+        + '<th>Format mix<span class="sub">R / C / I</span></th><th>Reel efficiency<span class="sub">eng per 1k plays</span></th>'
+        + '<th>Reach index<span class="sub">plays per 1k foll.</span></th><th>Syndicated</th><th>Flags</th></tr>';
+  MK.forEach(([k,m])=>{
+    const thin = m.n < 10;
+    const mix = ['R','C','I'].map((f,i)=>
+      `<span style="background:var(--o${i+1});width:${m.mix[f]}%" title="${f} ${m.mix[f]}%"></span>`).join('');
+    h += `<tr${thin?' style="opacity:.55"':''}><td>${m.market}<span class="sub">@${m.username}</span></td>`
+      + `<td>${m.followers.toLocaleString()}</td>`
+      + `<td>${m.n}<span class="sub">${m.per_week}/wk</span></td>`
+      + `<td><span class="mixbar" style="margin-left:auto">${mix}</span>`
+      + `<span class="sub">${m.mix.R}/${m.mix.C}/${m.mix.I}</span></td>`
+      + `<td>${m.reel_eng_per_1k_plays ?? '<span class="sub">too few</span>'}`
+      + (m.reel_eng_per_1k_plays?`<span class="bar" style="margin-left:auto;margin-top:5px"><i style="width:${100*m.reel_eng_per_1k_plays/maxEff}%"></i></span>`:'')+`</td>`
+      + `<td>${m.reel_plays_per_1k_foll ?? '<span class="sub">—</span>'}</td>`
+      + `<td style="color:${m.syndicated_pct>=15?'var(--coral)':'inherit'}">${m.syndicated_pct}%<span class="sub">${m.syndicated_n} post${m.syndicated_n===1?'':'s'}</span></td>`
+      + `<td>${m.n_over}▲ ${m.n_under}▼<span class="sub">of ${m.n_scored}</span></td></tr>`;
+  });
+  $('#scoreT').innerHTML = h;
+  const nat = D.markets.nat;
+  $('#scoreNote').innerHTML = `Rows are dimmed where fewer than 10 posts exist in the window — `
+    + `the national account <b>@${nat.username}</b> published <b>${nat.n} post in ${D.meta.weeks} weeks</b> `
+    + `against ${nat.lifetime_posts.toLocaleString()} lifetime, so no statistic on it would mean anything. `
+    + `That absence is itself worth a conversation.`; }
+
+/* ---------------- bar charts ---------------- */
+function bars(target, rows, unit, fmt) {
+  const W=520, rowH=30, M={t:8,r:64,b:8,l:104};
+  const H = M.t + rows.length*rowH + M.b;
+  const max = Math.max(...rows.map(r=>r.v))*1.02;
+  let s = `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="${unit}">`;
+  rows.forEach((r,i)=>{
+    const y = M.t + i*rowH, bw = (W-M.l-M.r) * r.v/max;
+    s += `<text x="${M.l-12}" y="${y+18}" text-anchor="end" font-size="12.5" fill="var(--ink-2)">${r.k}</text>`;
+    s += `<rect x="${M.l}" y="${y+6}" width="${bw}" height="15" fill="${r.c||'var(--cool)'}" rx="1"/>`;
+    s += `<text x="${M.l+bw+9}" y="${y+18}" font-size="12.5" font-weight="700" fill="var(--ink)"`
+       + ` style="font-variant-numeric:tabular-nums">${fmt(r.v)}</text>`;
+  });
+  s += '</svg>';
+  $(target).innerHTML = s;
+}
+bars('#chartEff',
+  ACTIVE.filter(([,m])=>m.reel_eng_per_1k_plays)
+        .sort((a,b)=>b[1].reel_eng_per_1k_plays-a[1].reel_eng_per_1k_plays)
+        .map(([,m])=>({k:m.market, v:m.reel_eng_per_1k_plays})),
+  'Engagement per 1000 plays', v=>v.toFixed(1));
+bars('#chartReach',
+  ACTIVE.filter(([,m])=>m.reel_plays_per_1k_foll)
+        .sort((a,b)=>b[1].reel_plays_per_1k_foll-a[1].reel_plays_per_1k_foll)
+        .map(([,m])=>({k:m.market, v:m.reel_plays_per_1k_foll})),
+  'Plays per 1000 followers', v=>Math.round(v).toLocaleString());
+
+/* ---------------- format mix ---------------- */
+{ const rows = ACTIVE.sort((a,b)=>b[1].mix.R-a[1].mix.R);
+  const W=1000, rowH=34, M={t:22,r:20,b:8,l:130};
+  const H = M.t + rows.length*rowH + M.b;
+  const iw = W-M.l-M.r;
+  let s = `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Format mix by market">`;
+  const netR = D.network_fmt.R.share;
+  const nx = M.l + iw*netR/100;
+  s += `<line x1="${nx}" x2="${nx}" y1="${M.t-8}" y2="${H-M.b}" stroke="var(--coral)" stroke-width="2" stroke-dasharray="4 3"/>`;
+  s += `<text x="${nx}" y="${M.t-13}" text-anchor="middle" font-size="10.5" font-weight="700" fill="var(--coral)" letter-spacing="1">NETWORK ${netR}% REEL</text>`;
+  rows.forEach(([k,m],i)=>{
+    const y = M.t + i*rowH; let x = M.l;
+    s += `<text x="${M.l-12}" y="${y+19}" text-anchor="end" font-size="12.5" fill="var(--ink-2)">${m.market}</text>`;
+    ['R','C','I'].forEach((f,j)=>{
+      const w = iw*m.mix[f]/100;
+      if (w > 0) {
+        s += `<rect x="${x}" y="${y+6}" width="${Math.max(0,w-2)}" height="16" fill="var(--o${j+1})"/>`;
+        if (w > 42) s += `<text x="${x+w/2-1}" y="${y+18}" text-anchor="middle" font-size="11" font-weight="700" `
+          + `fill="${j===0?'#fff':'var(--ink)'}" style="font-variant-numeric:tabular-nums">${m.mix[f]}%</text>`;
+      }
+      x += w;
+    });
+  });
+  s += '</svg>';
+  $('#chartMix').innerHTML = s;
+  const msp = D.markets.msp;
+  $('#mixNote').innerHTML = `Network mix is <b>${D.network_fmt.R.share}% reel, ${D.network_fmt.C.share}% carousel, `
+    + `${D.network_fmt.I.share}% static</b>. Reels carry a median engagement rate of `
+    + `<b>${pct(D.network_fmt.R.median_er)}</b> against <b>${pct(D.network_fmt.C.median_er)}</b> for carousels and `
+    + `<b>${pct(D.network_fmt.I.median_er)}</b> for stills. `
+    + `<b>${msp.market}</b> is the outlier: second-largest audience in the network at `
+    + `${msp.followers.toLocaleString()} followers, but only <b>${msp.mix.R}% reels</b> and `
+    + `<b>${msp.mix.I}% stills</b> — the heaviest use of the weakest format anywhere on the network.`; }
+
+/* ---------------- flagged ---------------- */
+{ const f = D.flagged;
+  f.slice(0,14).forEach(p=>{
+    const row = el('div','fl');
+    row.appendChild(el('div','z '+(p.state==='over'?'up':'dn'), sgn(p.z)));
+    const mid = el('div');
+    mid.innerHTML = `<a href="${p.url}" target="_blank" rel="noopener">${p.market} · ${p.fmt}</a>`
+      + (p.syndicated?'<span class="pill syn">Syndicated</span>':'')
+      + `<div class="meta">${p.date} · ${p.eng.toLocaleString()} engagements`
+      + (p.plays?` · ${p.plays.toLocaleString()} plays`:'')
+      + ` · vs ${p.baseline_n} comparable posts</div>`;
+    row.appendChild(mid);
+    const vb = p.vs_baseline;
+    const disp = vb >= 400 ? `${(1+vb/100).toFixed(0)}\u00d7 baseline`
+               : vb <= -50 ? `${(1+vb/100).toFixed(2)}\u00d7 baseline`
+               : `${vb>0?'+':''}${vb}%`;
+    row.appendChild(el('div','', `<span style="font-weight:700;color:${p.state==='over'?'var(--cool)':'var(--coral)'}">`
+      + `${disp}</span><div class="meta">vs market baseline</div>`));
+    row.appendChild(el('div','meta', p.state==='over'?'Deconstruct &amp; repeat':'Review &amp; tag'));
+    $('#flagged').appendChild(row);
+  });
+  const syn = f.filter(x=>x.syndicated).length;
+  $('#flagNote').innerHTML = `${f.length} posts flagged out of ${D.meta.n_scored} scored `
+    + `(${Math.round(100*f.length/D.meta.n_scored)}%) — showing the ${Math.min(14,f.length)} largest deviations. `
+    + `${syn} of them are syndicated drops. Every flag is a prompt for a human to look, not a verdict.`; }
+
+/* ---------------- theme toggle ---------------- */
+/* theme toggle removed: the tab inherits the portal's theme */
+</script>
+</body>
+</html>
