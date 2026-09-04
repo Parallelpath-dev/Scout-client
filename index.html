@@ -509,11 +509,11 @@ function routeCard(client, compCount, starts){
       "What you're trying to move this year, and what's in the way. We use it to turn observations into recommendations you can act on.",
       hasBrain ? 'done' : 'wait', hasBrain ? 'Received' : 'Waiting on you'],
     ['03','Competitors to watch',
-      "The DC operators you compete with. Send us your list and we'll start there. If you'd rather we propose one, say so.",
-      hasComps ? 'done' : 'wait', hasComps ? `${compCount} being monitored` : 'Waiting on you'],
+      "We've proposed five DC operators, screened on catchment overlap, how much of your offering they match, and price. Monitoring starts once you sign off.",
+      hasComps ? 'done' : 'wait', hasComps ? `${compCount} being monitored` : 'Approval pending'],
     ['04','First briefing',
       starts ? `Collection starts and your first weekly briefing lands ${starts}.`
-             : 'Collection starts once you send the competitor list. Briefings arrive every Monday after that.',
+             : 'Collection starts once you approve the competitor list. Briefings arrive every Monday after that.',
       'sched', starts || 'To be scheduled'],
   ];
 
