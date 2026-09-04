@@ -160,6 +160,19 @@ main{overflow-y:auto}
 .step .n{font-family:var(--font-mono);font-size:11px;color:var(--muted);padding-top:2px}
 .step .t{font-family:var(--font-display);font-weight:600;font-size:15px}
 .step .d{color:var(--muted);font-size:14px;margin-top:2px;max-width:56ch}
+/* The proposed competitive set, shown inside step 03 while it awaits
+   sign-off. Data lives on the client record, not in this file. */
+.prop{list-style:none;margin:13px 0 0;border-top:1px solid var(--line)}
+.prop li{display:grid;grid-template-columns:1fr auto;gap:12px;align-items:baseline;
+  padding:9px 0;border-bottom:1px solid var(--line)}
+.prop li:last-child{border-bottom:none;padding-bottom:0}
+.prop .nm{font-family:var(--font-display);font-weight:600;font-size:13.5px;color:var(--ink)}
+.prop .wh{color:var(--muted);font-size:12.5px;margin-top:1px}
+.prop .mins{font-family:var(--font-mono);font-size:10.5px;letter-spacing:.06em;
+  color:var(--muted);white-space:nowrap;text-align:right}
+.prop-cap{font-family:var(--font-mono);font-size:10px;letter-spacing:.11em;
+  text-transform:uppercase;color:var(--muted);margin-top:14px}
+@media(max-width:640px){.prop li{grid-template-columns:1fr}.prop .mins{text-align:left}}
 .state{font-family:var(--font-mono);font-size:10px;letter-spacing:.09em;text-transform:uppercase;
   padding:5px 11px;border-radius:99px;white-space:nowrap;border:1px solid var(--line)}
 .state.done{color:var(--ok);border-color:color-mix(in srgb,currentColor 38%,transparent);
@@ -501,6 +514,19 @@ function routeCard(client, compCount, starts){
 
   /* kind: 'done' settled · 'wait' the client owes us something · 'sched'
      on the calendar and nobody's blocked. Only 'wait' uses the accent. */
+  /* Proposed set, pending the client's sign-off. Deliberately separate from
+     the competitors table, which means "monitored" — showing these as
+     monitored before approval would be a lie the card tells every week. */
+  const proposed = (client.config && client.config.proposed_competitors) || [];
+  const proposedList = (!hasComps && proposed.length) ? `
+    <ul class="prop">
+      ${proposed.map(c => `<li>
+        <div><div class="nm">${esc(c.name)}</div><div class="wh">${esc(c.why)}</div></div>
+        <div class="mins">${esc(c.travel)}</div>
+      </li>`).join('')}
+    </ul>
+    <p class="prop-cap">Travel time from your DC gyms · say the word and we'll swap any of them</p>` : '';
+
   const rows = [
     ['01','Access',
       "Your sign-in works. Tell us who else on your team needs one and we'll add them.",
@@ -509,8 +535,9 @@ function routeCard(client, compCount, starts){
       "What you're trying to move this year, and what's in the way. We use it to turn observations into recommendations you can act on.",
       hasBrain ? 'done' : 'wait', hasBrain ? 'Received' : 'Waiting on you'],
     ['03','Competitors to watch',
-      "We've proposed five DC operators, screened on catchment overlap, how much of your offering they match, and price. Monitoring starts once you sign off.",
-      hasComps ? 'done' : 'wait', hasComps ? `${compCount} being monitored` : 'Approval pending'],
+      "Five DC operators, ranked mainly on how much of your offering they match, then on whether their catchment overlaps yours and how close their pricing sits. Monitoring starts once you sign off.",
+      hasComps ? 'done' : 'wait', hasComps ? `${compCount} being monitored` : 'Approval pending',
+      proposedList],
     ['04','First briefing',
       starts ? `Collection starts and your first weekly briefing lands ${starts}.`
              : 'Collection starts once you approve the competitor list. Briefings arrive every Monday after that.',
@@ -523,12 +550,13 @@ function routeCard(client, compCount, starts){
     <h2>We're setting up your Scout</h2>
     <p class="lede">Scout watches your competitors every week and tells you what changed and what to do about it.</p>
     <ul class="steps">
-      ${rows.map(([n, t, d, kind, label]) => `
+      ${rows.map(([n, t, d, kind, label, extra]) => `
         <li class="step">
           <span class="n">${n}</span>
           <div>
             <div class="t">${esc(t)}</div>
             <div class="d">${esc(d)}</div>
+            ${extra || ''}
           </div>
           <span class="state ${kind}">${esc(label)}</span>
         </li>`).join('')}
