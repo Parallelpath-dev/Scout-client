@@ -7,15 +7,54 @@ codebase, so there is no code path that reaches another tenant's data.
 Separate from the internal Scout dashboard on purpose.
 
 ```
-.nojekyll                   stops GitHub from preprocessing the files
-index.html                  the whole app, one file
-assets/bp-logo.jpg          client logo, hosted by us (never hotlinked)
-migrations/001_*.sql        auth, isolation policies, market + publish columns
-migrations/002_*.sql        Bouldering Project tenant (contact details scrubbed)
-scripts/test_isolation.py   proves a client login can't reach another client
-scripts/extract-brand.js    console script that pulls a client's palette
+.nojekyll                       stops GitHub from preprocessing the files
+index.html                      the portal, one file
+network-monitor.html            one-time network analysis, embedded as a tab
+bouldering_project_logo.jpg     client logo, hosted by us (never hotlinked)
 bouldering-project-theme.json   the theme, with provenance for every value
+BP-SCOUT-FORMATTING.md          the design reference for this client
+
+pipeline/geo.py                 geo classifier for competitor ad creative
+pipeline/geo_terms.json         its vocabulary. The part that churns.
+pipeline/test_geo.py            fixtures pinning the decisions that are easy to get wrong
+pipeline/classify_meta_ads.py   reads the internal pull, classifies, writes portal.*
+pipeline/executive_profile.py   prompt constraints for the client-facing output profile
+pipeline/validate_briefing.py   the gate. Holds a briefing rather than publishing a bad one.
+
+migrations/001_*.sql            auth, isolation policies, market + publish columns
+migrations/002_*.sql            Bouldering Project tenant (contact details scrubbed)
+migrations/003_portal_schema.sql  the `portal` schema: five tables, RLS, anon granted nothing
+migrations/004_signal_dedupe.sql  external_ref + week_of, so a re-run is idempotent
+migrations/005_ad_sampling.sql    splits the library total from the classified sample
+
+scripts/test_isolation.py       proves a client login can't reach another client
+scripts/extract-brand.js        console script that pulls a client's palette
+.github/workflows/portal_weekly.yml  Mondays 09:00 UTC, after the internal pipeline
 ```
+
+## How this fits with the internal tool
+
+Three moving parts, and the seam between them is the database, not shared code.
+
+| Where | What it does |
+|---|---|
+| `parallelpath-dev/scout` | The internal pipeline. Scrapes every competitor once a week and writes raw signals to `public.signals`. |
+| this repo | Reads that, classifies it for geographic relevance, writes the client-facing rows to `portal.*`, and serves the portal. |
+| Supabase | Holds both schemas. `public` is the internal working set, `portal` is what a client can see. |
+
+**The scrape happens once.** `pipeline/classify_meta_ads.py` defaults to `--source
+internal`, which reads the ads the weekly pipeline already pulled. A `--source apify`
+fallback exists for backfills, warns when used, and spends money. The schemas are
+separate for client data isolation, which was never a reason to pay for the same ads
+twice.
+
+**What the ad numbers mean.** The Meta Ad Library exposes no targeting, audience
+location, DMA or delivery region for commercial ads anywhere, and US commercial ads are
+not in the API at all. So `dc_referencing` counts ads whose creative REFERENCES this
+market. It is a floor on local activity, never a count of ads targeted at DC, and an ad
+classified `none` may be a competitor's heaviest local spend. `portal.ad_geo_weekly`
+has no per-market average column and never should: dividing a national ad count by a
+location count produces a number with no basis in anything observable.
 
 **This repo is public.** GitHub Pages requires it, and Pages serves every file
 at its path — `/migrations/001_tenant_isolation.sql` is fetchable by anyone.
