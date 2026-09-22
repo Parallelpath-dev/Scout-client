@@ -416,9 +416,19 @@ async function boot(){
   const client = clients[0];
   applyTheme(client.theme);
 
+  /* Competitive data lives in the `portal` schema, not `public`. `public` is the
+     internal tool's working set and this page is never pointed at it. `clients`
+     above is the one exception: the client record, theme and config are shared,
+     and row level security returns only this user's row.
+
+     Row level security on portal.* resolves membership through public.client_users
+     exactly as it does here, so this changes where the data comes from and not who
+     can see it. */
+  const portal = sb.schema('portal');
+
   const [{ count:compCount }, { data:briefs }] = await Promise.all([
-    sb.from('competitors').select('id',{ count:'exact', head:true }),
-    sb.from('briefings').select('id,week_of,pressure_score,summary')
+    portal.from('competitors').select('id',{ count:'exact', head:true }),
+    portal.from('briefings').select('id,week_of,pressure_score,summary')
       .order('week_of',{ ascending:false }).limit(1),
   ]);
 

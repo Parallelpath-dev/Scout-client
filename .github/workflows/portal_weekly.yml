@@ -1,0 +1,71 @@
+name: Portal weekly
+
+# Runs after the internal pipeline, not instead of it.
+#
+# parallelpath-dev/scout runs `weekly_scout.yml` on cron '0 7 * * 1' (Mondays 07:00 UTC).
+# Its Apify step scrapes the Meta Ad Library once per competitor and writes the result to
+# public.signals. This workflow READS that and classifies it. It never scrapes.
+#
+# 09:00 gives the internal run two hours of headroom. If the pull has not landed,
+# classify_meta_ads.py exits non-zero with a message naming the reason rather than
+# writing an empty week, so a race shows up as a red run and not as a client dashboard
+# that quietly reports zero competitor activity.
+#
+# If that two-hour gap ever proves too tight, the fix is a repository_dispatch fired at
+# the end of weekly_scout.yml rather than a bigger offset.
+
+on:
+  schedule:
+    - cron: '0 9 * * 1'
+  workflow_dispatch:
+    inputs:
+      client_slug:
+        description: 'Client slug to run'
+        required: false
+        default: 'bouldering-project'
+      week:
+        description: 'ISO date inside the target week (blank = this week)'
+        required: false
+        default: ''
+      dry_run:
+        description: 'Classify and print, write nothing'
+        type: boolean
+        required: false
+        default: false
+
+env:
+  SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+  SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+
+jobs:
+  classify:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: pip install -r pipeline/requirements.txt
+
+      # Runs before anything touches the database. The classifier's vocabulary is the
+      # part that churns, and a bad edit to geo_terms.json is silent: it does not raise,
+      # it just quietly mislabels a week. These fixtures are the only thing standing
+      # between a typo and a number on a client's dashboard.
+      - name: Test the geo classifier
+        run: cd pipeline && python3 test_geo.py
+
+      - name: Classify Meta ads
+        run: |
+          ARGS="--client ${{ github.event.inputs.client_slug || 'bouldering-project' }}"
+          if [ -n "${{ github.event.inputs.week }}" ]; then
+            ARGS="$ARGS --week ${{ github.event.inputs.week }}"
+          fi
+          if [ "${{ github.event.inputs.dry_run }}" = "true" ]; then
+            ARGS="$ARGS --dry-run"
+          fi
+          cd pipeline && python3 classify_meta_ads.py $ARGS

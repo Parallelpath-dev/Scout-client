@@ -1,0 +1,313 @@
+{
+  "_doc": [
+    "Vocabulary for the geo classifier. Lives in config, not code, because this is the",
+    "part that will churn: every week of real ad copy adds a place name nobody predicted.",
+    "",
+    "'DC' throughout this build means the DC MARKET as scoped for this client, not the",
+    "District boundary. Movement's monitored gym is in Arlington and Sportrock's is in",
+    "Alexandria; an ad pushing either of those is locally relevant to Kyle and is scored",
+    "dc_*. A place inside the commuter shed but outside the monitored set (Rockville,",
+    "Silver Spring) is 'regional'. Baltimore is not this market.",
+    "",
+    "Matching is case-insensitive, on word boundaries, against the ad's text fields and",
+    "landing URLs. First tier that hits wins, and the matched string is stored as evidence."
+  ],
+  "tiers": [
+    "dc_landing",
+    "dc_explicit",
+    "regional",
+    "other_market",
+    "none"
+  ],
+  "dc_landing_url_patterns": {
+    "_doc": [
+      "Landing URL paths that are a location page for one of that brand's gyms inside",
+      "the DC-market catchment (the same ~30-minute gate the competitive set was built on).",
+      "Keyed by competitor domain, matched as a substring of host+path+query.",
+      "",
+      "DELIBERATE ASYMMETRY: a landing page to Movement Rockville scores dc_landing, but",
+      "the word 'Rockville' in body copy scores only 'regional'. Pointing paid traffic at",
+      "a specific local asset is a stronger statement of local intent than naming a place",
+      "in a sentence, and the tiers are ordered by signal strength, not by geography.",
+      "Baltimore-market pages (Timonium, Hampden, Columbia MD) are deliberately absent."
+    ],
+    "movementgyms.com": [
+      "/crystal-city",
+      "/rockville",
+      "/alexandria",
+      "/fairfax"
+    ],
+    "sportrock.com": [
+      "/alexandria",
+      "/lorton",
+      "/sterling",
+      "/rio"
+    ],
+    "ymcadc.org": [
+      "bid=01",
+      "/anthony-bowen",
+      "/anthonybowen"
+    ],
+    "vidafitness.com": [
+      "/locations/u-street",
+      "/locations/logan",
+      "/locations/city-vista",
+      "/locations/metropole",
+      "/locations/navy-yard",
+      "/locations/ballston",
+      "/locations/yards"
+    ],
+    "onelifefitness.com": [
+      "/gyms/tenleytown",
+      "/gyms/capitol-hill",
+      "/gyms/fort-totten",
+      "/gyms-washington-dc",
+      "/gyms/alexandria",
+      "/gyms/arlington",
+      "/gyms/crystal-city",
+      "/gyms/springfield",
+      "/gyms/fairfax"
+    ]
+  },
+  "dc_landing_query_hints": {
+    "_doc": "Some brands carry the location in a query string or UTM rather than the path. Substring match on the whole lowercased URL. Kept separate so the evidence string says which mechanism fired.",
+    "any": [
+      "utm_campaign=dc",
+      "utm_campaign=washington",
+      "utm_campaign=tenleytown",
+      "utm_campaign=ustreet",
+      "utm_campaign=u-street",
+      "utm_campaign=crystalcity",
+      "utm_campaign=crystal-city",
+      "utm_campaign=alexandria",
+      "utm_campaign=dmv",
+      "location=dc",
+      "club=dc",
+      "gym=dc"
+    ]
+  },
+  "dc_explicit": {
+    "_doc": "Place names inside the monitored DC market. A hit here is the second strongest signal after a landing page.",
+    "terms": [
+      "washington dc",
+      "washington, dc",
+      "washington d.c.",
+      "district of columbia",
+      "columbia heights",
+      "tenleytown",
+      "tenley",
+      "u street",
+      "u st nw",
+      "eckington",
+      "navy yard",
+      "capitol hill",
+      "fort totten",
+      "petworth",
+      "adams morgan",
+      "shaw",
+      "logan circle",
+      "dupont",
+      "noma",
+      "brookland",
+      "georgetown",
+      "foggy bottom",
+      "h street",
+      "anthony bowen",
+      "crystal city",
+      "pentagon city",
+      "national landing",
+      "alexandria",
+      "old town alexandria",
+      "arlington",
+      "ballston",
+      "clarendon",
+      "rosslyn",
+      "del ray"
+    ],
+    "_scope_note": [
+      "The District plus the inner Arlington/Alexandria ring only. Two of the five",
+      "monitored gyms sit in that ring (Movement Crystal City, Sportrock Alexandria),",
+      "so it is DC-market by the same logic the competitive set used.",
+      "Springfield, Annandale, Sterling and Lorton are outer commuter shed and live in",
+      "'regional'. Getting this line wrong inflates the number Kyle reads."
+    ],
+    "ambiguous": {
+      "_doc": "Terms that are DC-market place names AND ordinary words or other-market places. Each carries its OWN disambiguator list; nothing else qualifies it. 'Columbia' alone is Columbia MD, Columbia SC, and Columbia University.",
+      "columbia": [
+        "heights",
+        "dc",
+        "washington"
+      ],
+      "shaw": [
+        "dc",
+        "washington",
+        "neighborhood"
+      ],
+      "yards": [
+        "dc",
+        "washington",
+        "navy"
+      ]
+    }
+  },
+  "regional": {
+    "_doc": "The commuter shed and the umbrella terms. Real, but weaker than a named DC-market place.",
+    "terms": [
+      "dmv",
+      "the dmv",
+      "dc metro",
+      "dc area",
+      "greater washington",
+      "northern virginia",
+      "n. virginia",
+      "maryland",
+      "virginia",
+      "beltway",
+      "inside the beltway",
+      "rockville",
+      "gaithersburg",
+      "bethesda",
+      "silver spring",
+      "hyattsville",
+      "college park",
+      "wheaton",
+      "germantown",
+      "reston",
+      "herndon",
+      "vienna",
+      "tysons",
+      "falls church",
+      "mclean",
+      "fairfax",
+      "manassas",
+      "woodbridge",
+      "leesburg",
+      "ashburn",
+      "springfield",
+      "annandale",
+      "sterling",
+      "lorton"
+    ],
+    "ambiguous": {
+      "_doc": [
+        "Terms that fire on ordinary prose unless disambiguated. The two-letter state",
+        "abbreviations are the worst: 'MD' is a doctor and 'VA' is the start of 'va va",
+        "voom'. These are listed ONLY here, never in 'terms' above, or the unconditional",
+        "pass matches them first and the qualifier logic never runs.",
+        "'Rio' is Sportrock's Gaithersburg gym and also a city in Brazil."
+      ],
+      "md": [
+        "maryland",
+        "rockville",
+        "bethesda",
+        "silver spring",
+        "gaithersburg"
+      ],
+      "va": [
+        "virginia",
+        "arlington",
+        "alexandria",
+        "fairfax",
+        "reston"
+      ],
+      "nova": [
+        "virginia",
+        "northern"
+      ],
+      "rio": [
+        "gaithersburg",
+        "maryland",
+        "climbing",
+        "sportrock"
+      ]
+    }
+  },
+  "other_market": {
+    "_doc": [
+      "Markets these brands operate in that are NOT this one. A hit here is informative in",
+      "its own right: it says the national page is running local creative for somewhere",
+      "else, which is the context for a DC-referencing count being low.",
+      "Baltimore is deliberately here, not in 'regional'. Movement runs Timonium and",
+      "Hampden; they are a different metro and a different competitive question."
+    ],
+    "terms": [
+      "baltimore",
+      "timonium",
+      "hampden",
+      "towson",
+      "canton",
+      "denver",
+      "boulder",
+      "golden",
+      "englewood",
+      "lakewood",
+      "chicago",
+      "atlanta",
+      "houston",
+      "dallas",
+      "austin",
+      "san antonio",
+      "portland",
+      "seattle",
+      "san francisco",
+      "oakland",
+      "sacramento",
+      "los angeles",
+      "san diego",
+      "phoenix",
+      "tempe",
+      "scottsdale",
+      "salt lake city",
+      "boise",
+      "minneapolis",
+      "st paul",
+      "twin cities",
+      "boston",
+      "brooklyn",
+      "new york",
+      "philadelphia",
+      "pittsburgh",
+      "charlotte",
+      "raleigh",
+      "durham",
+      "nashville",
+      "columbus",
+      "cleveland",
+      "detroit",
+      "milwaukee",
+      "kansas city",
+      "st louis",
+      "omaha",
+      "orlando",
+      "tampa",
+      "miami",
+      "jacksonville",
+      "richmond",
+      "virginia beach",
+      "norfolk",
+      "newport news",
+      "chesapeake"
+    ]
+  },
+  "dc_landing_path_any": {
+    "_doc": [
+      "Landing-page path patterns applied to EVERY competitor domain, not just the ones",
+      "hand-listed above. Real ads in public.signals proved the need: Casper drives to",
+      "stores.casper.com/dc/washington/ and VEG to veg.com/locations/dc, both from national",
+      "pages whose copy says nothing geographic at all. The per-brand list only catches",
+      "paths somebody already thought to write down; if Onelife launches",
+      "/gyms/columbia-heights next month, only this list catches it.",
+      "",
+      "Anchored with a leading slash and a trailing boundary so '/dc' does not match",
+      "'/dc-comics' and '/washington' does not match '/washingtonville'."
+    ],
+    "regex": [
+      "/dc(?:/|$|\\?)",
+      "/washington(?:-?d\\.?c\\.?)?(?:/|$|\\?)",
+      "/locations?/dc(?:/|$|\\?)",
+      "/locations?/washington",
+      "/(?:gyms?|clubs?|stores?|branch(?:es)?)/(?:washington|dc|columbia-heights|tenleytown|u-street|capitol-hill|navy-yard|eckington|crystal-city|pentagon-city|arlington|alexandria|ballston)(?:/|$|\\?)",
+      "/(?:columbia-heights|tenleytown|u-street|anthony-bowen|crystal-city|navy-yard|capitol-hill)(?:/|$|\\?)"
+    ]
+  }
+}
