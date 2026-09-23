@@ -63,9 +63,14 @@ MONEY = re.compile(r"\$\s?(\d{1,3}(?:,\d{3})*(?:\.\d{2})?)")
 # space and a "$", both being non-word characters, so `\b\$0 enrollment` silently never
 # fires — and "$0 enrollment fee" is exactly the promo these gyms actually run. The
 # lookbehind still stops "carefree" matching "free", which is what the \b was for.
+# "intro" cannot stand alone in this industry. "Intro to Climbing", "intro class" and
+# "intro belay course" are the names of products every one of these gyms sells, not
+# promotions. Only the offer nouns make it a promotion; "introductory" on its own still
+# counts, because nobody names a course that.
 OFFER_TERMS = re.compile(
     r"(?<![A-Za-z])(free|waived|no (?:enrollment|joining|initiation) fee|\$0 enrollment|"
-    r"first month|intro(?:ductory)?|trial|day pass|guest pass|promo|"
+    r"first month|introductory|intro (?:offer|rate|pric\w+|special|deal|month)|"
+    r"trial|day pass|guest pass|promo|"
     r"limited time|ends? (?:soon|\w+day)|save \$?\d+|% off|percent off|"
     r"special offer|sign[- ]?up bonus|founding member|pre[- ]?sale)\b",
     re.I,

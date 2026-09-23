@@ -14,12 +14,23 @@ bouldering_project_logo.jpg     client logo, hosted by us (never hotlinked)
 bouldering-project-theme.json   the theme, with provenance for every value
 BP-SCOUT-FORMATTING.md          the design reference for this client
 
-pipeline/geo.py                 geo classifier for competitor ad creative
+pipeline/supa.py                the PostgREST client all three collectors share
+pipeline/geo.py                 geo classifier. Shared by ads, web changes and email.
 pipeline/geo_terms.json         its vocabulary. The part that churns.
 pipeline/test_geo.py            fixtures pinning the decisions that are easy to get wrong
-pipeline/classify_meta_ads.py   reads the internal pull, classifies, writes portal.*
+
+pipeline/classify_meta_ads.py   collector — scrapes Meta, classifies, writes portal.*
+pipeline/web_change.py          what-changed / does-it-apply-here scoring for pages
+pipeline/collect_web_changes.py collector — fetches watched pages, diffs, writes signals
+pipeline/test_web_change.py     fixtures for the above
+pipeline/email_classify.py      what-kind-of-email scoring. Imports web_change's vocabulary.
+pipeline/classify_emails.py     collector — reads portal.inbound_emails, writes signals
+pipeline/test_email_classify.py fixtures for the above
+
 pipeline/executive_profile.py   prompt constraints for the client-facing output profile
 pipeline/validate_briefing.py   the gate. Holds a briefing rather than publishing a bad one.
+
+supabase/functions/portal-inbound-email/  receives mail from Resend. Stores, never judges.
 
 migrations/001_*.sql            auth, isolation policies, market + publish columns
 migrations/002_*.sql            Bouldering Project tenant (contact details scrubbed)
@@ -27,10 +38,17 @@ migrations/003_portal_schema.sql  the `portal` schema: five tables, RLS, anon gr
 migrations/004_signal_dedupe.sql  external_ref + week_of, so a re-run is idempotent
 migrations/005_ad_sampling.sql    splits the library total from the classified sample
 migrations/006_channel_max_ads.sql per-channel ad cap. NULL = census, which is the default.
+migrations/007_service_role_grants.sql  service_role bypasses RLS but still needs GRANTs
+migrations/008_dedupe_not_partial.sql   PostgREST cannot ON CONFLICT a partial index
+migrations/009_single_market.sql        brands that operate only in this market
+migrations/010_client_level_signals.sql competitor_id nullable, NULLS NOT DISTINCT
+migrations/011_channel_url_key.sql      channels unique key includes url; seeds pricing pages
+migrations/012_prices_by_location.sql   Movement prices by home gym
+migrations/013_inbound_emails.sql       raw inbound mail. Every column nullable on purpose.
 
 scripts/test_isolation.py       proves a client login can't reach another client
 scripts/extract-brand.js        console script that pulls a client's palette
-.github/workflows/portal_weekly.yml  Mondays 09:00 UTC, after the internal pipeline
+.github/workflows/portal_weekly.yml  Mondays 08:00 UTC. No dependency on the internal tool.
 ```
 
 ## How this fits with the internal tool
@@ -123,3 +141,19 @@ someone, the config is missing a field — add the field.
   assembled from recordings of your sales calls.
 - **Unpublishing is `published_at = null`.** The row survives, the client stops
   seeing it, effective immediately. That's the kill switch for a bad week.
+- **Resend inbound has no per-address routing.** One MX record covers all of
+  `scout.parallelpath.com`, and every alias — this client's four and the internal
+  tool's ten — fires the same `email.received` event. The split is at the webhook
+  subscription: two endpoints, each ignoring the aliases it doesn't own. **Never
+  repoint the existing `inbound-email` webhook**; changing that destination takes
+  the internal tool's ten aliases with it and nothing will say so.
+- **The inbound receiver stores and never judges.** Every resolvable column on
+  `portal.inbound_emails` is nullable, so an unrecognised sender becomes a row with
+  `match_status = 'unmatched'` rather than a failed insert. `public.competitor_emails`
+  does the opposite — `competitor_name` is NOT NULL — which is why it holds 335
+  messages for the internal aliases and zero for this client's. Unmatched rows are
+  left unclassified on purpose: adding one `sender_domains` entry claims every
+  message already sitting in the table.
+- **Email geography is read from the content, never the footer.** CAN-SPAM requires
+  a mailing address in every marketing email. VIDA's says Washington, DC. Score it
+  naively and "VIDA sent 4 DC-relevant emails" just means "VIDA sent 4 emails".
