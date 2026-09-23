@@ -50,12 +50,18 @@ jobs:
       - name: Install dependencies
         run: pip install -r pipeline/requirements.txt
 
+      - name: Install Chromium
+        run: playwright install --with-deps chromium
+
       # Runs before anything touches the database. The classifier's vocabulary is the
       # part that churns, and a bad edit to geo_terms.json is silent: it does not raise,
       # it just quietly mislabels a week. These fixtures are the only thing standing
       # between a typo and a number on a client's dashboard.
-      - name: Test the geo classifier
-        run: cd pipeline && python3 test_geo.py
+      - name: Test the classifiers
+        run: |
+          cd pipeline
+          python3 test_geo.py
+          python3 test_web_change.py
 
       - name: Collect and classify Meta ads
         run: |
@@ -67,3 +73,17 @@ jobs:
             ARGS="$ARGS --dry-run"
           fi
           cd pipeline && python3 classify_meta_ads.py $ARGS
+
+      # Runs after the ads step and independently of it: a failure in one collector
+      # should not cost the week's other signals.
+      - name: Collect web changes
+        if: always()
+        run: |
+          ARGS="--client ${{ github.event.inputs.client_slug || 'bouldering-project' }}"
+          if [ -n "${{ github.event.inputs.week }}" ]; then
+            ARGS="$ARGS --week ${{ github.event.inputs.week }}"
+          fi
+          if [ "${{ github.event.inputs.dry_run }}" = "true" ]; then
+            ARGS="$ARGS --dry-run"
+          fi
+          cd pipeline && python3 collect_web_changes.py $ARGS
