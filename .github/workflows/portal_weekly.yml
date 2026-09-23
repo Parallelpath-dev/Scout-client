@@ -1,22 +1,19 @@
 name: Portal weekly
 
-# Runs after the internal pipeline, not instead of it.
+# This pipeline collects its own ads. It does not wait for, read from, or depend on
+# the internal tool in parallelpath-dev/scout.
 #
-# parallelpath-dev/scout runs `weekly_scout.yml` on cron '0 7 * * 1' (Mondays 07:00 UTC).
-# Its Apify step scrapes the Meta Ad Library once per competitor and writes the result to
-# public.signals. This workflow READS that and classifies it. It never scrapes.
+# Bouldering Project's competitors live in portal.competitors and portal.channels,
+# which the internal pipeline cannot see, so these five pages are pulled exactly once
+# a week by exactly one codebase. Changing a cap, adding a competitor or retiring a
+# channel is a change in this repo and nothing else.
 #
-# 09:00 gives the internal run two hours of headroom. If the pull has not landed,
-# classify_meta_ads.py exits non-zero with a message naming the reason rather than
-# writing an empty week, so a race shows up as a red run and not as a client dashboard
-# that quietly reports zero competitor activity.
-#
-# If that two-hour gap ever proves too tight, the fix is a repository_dispatch fired at
-# the end of weekly_scout.yml rather than a bigger offset.
+# Monday 08:00 UTC is chosen for no reason other than being Monday morning. There is
+# no ordering constraint to respect.
 
 on:
   schedule:
-    - cron: '0 9 * * 1'
+    - cron: '0 8 * * 1'
   workflow_dispatch:
     inputs:
       client_slug:
@@ -36,6 +33,7 @@ on:
 env:
   SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
   SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+  APIFY_TOKEN: ${{ secrets.APIFY_TOKEN }}
 
 jobs:
   classify:
@@ -59,7 +57,7 @@ jobs:
       - name: Test the geo classifier
         run: cd pipeline && python3 test_geo.py
 
-      - name: Classify Meta ads
+      - name: Collect and classify Meta ads
         run: |
           ARGS="--client ${{ github.event.inputs.client_slug || 'bouldering-project' }}"
           if [ -n "${{ github.event.inputs.week }}" ]; then

@@ -27,17 +27,26 @@ ads by 7 locations produces a number with no basis in anything observable, and
 
 WHERE THE ADS COME FROM
 -----------------------
-The internal weekly pipeline already scrapes these pages and stores the result in
-public.signals as signal_type='meta_ads'. This module READS that, classifies it, and
-writes the client-facing rows. It does not scrape.
+This pipeline does its own scrape. It does not read from the internal tool, and the
+internal tool does not know Bouldering Project's competitors exist.
 
-That is deliberate. The scrape is the expensive part, the internal fetcher is proven, and
-running a second pull of the same five pages would pay Apify twice for identical ads. The
-schemas are separate for client data isolation, which was never a reason to duplicate
-collection.
+That independence is the point. Bouldering Project's competitor config lives in
+`portal.competitors` and `portal.channels`, not in `public.clients.config`, so
+`weekly_scout.yml` never picks these pages up and the same five pages are never pulled
+twice. A cap, a new competitor or a retired channel is a change in this repo alone.
 
---source apify exists as a fallback for a backfill or a one-off outside the weekly
-cadence. It costs money. It is not the default and should stay that way.
+Two things the internal collector does that we deliberately do not:
+
+  - It truncates. `body_text[:500]` and `creative_assets[:10]`. For a classifier reading
+    ad copy for place names, a 500-character clip drops geography mentioned late in a
+    long body and the ad silently classifies as `none`.
+  - It caps every page at 35 ads, sorted by impressions. For a competitor running 367,
+    that describes their biggest campaigns rather than their market.
+
+`--source internal` still exists and reads what the weekly pipeline collected. It is
+there for the day Bouldering Project is also an internal client, where re-scraping the
+same pages WOULD be paying twice. It is not the default and it inherits both limitations
+above.
 
 USAGE
 -----
@@ -82,8 +91,10 @@ AD_LIBRARY_URL = (
     "&view_all_page_id={page_id}"
 )
 
-# A single page running more than this is a signal that something changed upstream, not a
-# real result. Onelife was the ceiling at 367 on 11 Sep. The cap bounds spend on a runaway.
+# Used only when a channel has no max_ads set, which is the normal case. This is a
+# runaway guard, not a sampling policy: Onelife was the largest page in this set at 367
+# active ads on 11 Sep, so anything approaching this number means something changed
+# upstream rather than a competitor tripling their spend overnight.
 RESULTS_LIMIT_PER_PAGE = 800
 
 
@@ -150,11 +161,39 @@ class Supa:
 # ── Apify ───────────────────────────────────────────────────────────────────
 
 
-def run_actor(token: str, page_ids: list[str], timeout_s: int = 1800) -> list[dict[str, Any]]:
-    """Start the scraper, wait for it, return the dataset items."""
+def run_actor(
+    token: str,
+    page_ids: list[str],
+    caps: dict[str, int | None] | None = None,
+    timeout_s: int = 1800,
+) -> list[dict[str, Any]]:
+    """Start the scraper, wait for it, return the dataset items.
+
+    caps maps page id to its max_ads. A page with no cap takes the whole page, which is
+    what we want for this client: the geographic mix of everything they are running is
+    the product, and a capped pull is sorted by impressions rather than sampled.
+
+    The actor takes one resultsLimit for the whole run rather than per URL, so a mixed
+    set of caps runs as separate calls. In practice every page here is uncapped and this
+    is a single call.
+    """
+    caps = caps or {}
+    groups: dict[int, list[str]] = {}
+    for pid in page_ids:
+        groups.setdefault(caps.get(pid) or RESULTS_LIMIT_PER_PAGE, []).append(pid)
+
+    items: list[dict[str, Any]] = []
+    for limit, pids in groups.items():
+        items.extend(_run_one(token, pids, limit, timeout_s))
+    return items
+
+
+def _run_one(
+    token: str, page_ids: list[str], results_limit: int, timeout_s: int
+) -> list[dict[str, Any]]:
     payload = {
         "startUrls": [{"url": AD_LIBRARY_URL.format(page_id=pid)} for pid in page_ids],
-        "resultsLimit": RESULTS_LIMIT_PER_PAGE,
+        "resultsLimit": results_limit,
         "activeStatus": "active",
     }
     r = requests.post(
@@ -411,9 +450,10 @@ def main() -> int:
     ap.add_argument(
         "--source",
         choices=("internal", "apify", "file"),
-        default="internal",
-        help="internal (default): read the ads the weekly pipeline already pulled. "
-        "apify: scrape again, SPENDS CREDIT. file: read a saved actor dump.",
+        default="apify",
+        help="apify (default): scrape the Ad Library. internal: read what the "
+        "internal weekly pipeline collected, which is capped at 35 and truncates copy. "
+        "file: read a saved actor dump, for re-tuning without paying twice.",
     )
     ap.add_argument("--week", help="ISO date inside the target week. Defaults to this week.")
     ap.add_argument("--from-file", help="path for --source file")
@@ -448,7 +488,7 @@ def main() -> int:
             "platform": "eq.facebook",
             "purpose": "eq.paid_ads",
             "active": "eq.true",
-            "select": "id,competitor_id,external_id,scope",
+            "select": "id,competitor_id,external_id,scope,max_ads",
         },
     )
     comp_ids = {c["id"] for c in competitors}
@@ -483,14 +523,20 @@ def main() -> int:
         print(f"  loaded {len(raw)} items from {args.from_file}")
 
     elif args.source == "apify":
-        # Deliberately awkward to reach. The weekly pipeline already scrapes these exact
-        # pages; running this pays Apify a second time for identical ads.
         token = os.environ.get("APIFY_TOKEN")
         if not token:
-            print("APIFY_TOKEN must be set for --source apify", file=sys.stderr)
+            print("APIFY_TOKEN must be set", file=sys.stderr)
             return 2
-        print("  WARNING --source apify re-scrapes pages the weekly pipeline already pulls.")
-        raw = run_actor(token, page_ids)
+        # Per-channel caps, from portal.channels.max_ads. NULL means census.
+        caps = {
+            str(ch["external_id"]): ch.get("max_ads")
+            for ch in channels_by_comp.values()
+            if ch.get("external_id")
+        }
+        capped = {k: v for k, v in caps.items() if v}
+        if capped:
+            print(f"  {len(capped)} of {len(caps)} pages are capped: {capped}")
+        raw = run_actor(token, page_ids, caps=caps)
         print(f"  actor returned {len(raw)} items")
 
     else:

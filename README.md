@@ -26,6 +26,7 @@ migrations/002_*.sql            Bouldering Project tenant (contact details scrub
 migrations/003_portal_schema.sql  the `portal` schema: five tables, RLS, anon granted nothing
 migrations/004_signal_dedupe.sql  external_ref + week_of, so a re-run is idempotent
 migrations/005_ad_sampling.sql    splits the library total from the classified sample
+migrations/006_channel_max_ads.sql per-channel ad cap. NULL = census, which is the default.
 
 scripts/test_isolation.py       proves a client login can't reach another client
 scripts/extract-brand.js        console script that pulls a client's palette
@@ -38,15 +39,24 @@ Three moving parts, and the seam between them is the database, not shared code.
 
 | Where | What it does |
 |---|---|
-| `parallelpath-dev/scout` | The internal pipeline. Scrapes every competitor once a week and writes raw signals to `public.signals`. |
-| this repo | Reads that, classifies it for geographic relevance, writes the client-facing rows to `portal.*`, and serves the portal. |
-| Supabase | Holds both schemas. `public` is the internal working set, `portal` is what a client can see. |
+| this repo | Collects this client's competitor ads, classifies them for geographic relevance, writes `portal.*`, and serves the portal. |
+| `Parallelpath-dev/scout` | The internal tool. Different clients, different output profile, no shared code. |
+| Supabase | Holds both schemas. `public` is the internal working set, `portal` is what a client can see and what this pipeline owns. |
 
-**The scrape happens once.** `pipeline/classify_meta_ads.py` defaults to `--source
-internal`, which reads the ads the weekly pipeline already pulled. A `--source apify`
-fallback exists for backfills, warns when used, and spends money. The schemas are
-separate for client data isolation, which was never a reason to pay for the same ads
-twice.
+**This pipeline collects its own ads.** It does not read from the internal tool and the
+internal tool does not know this client's competitors exist. Their config lives in
+`portal.competitors` and `portal.channels`, never in `public.clients.config`, which is
+what keeps `weekly_scout.yml` from picking up the same pages. A cap, a new competitor or
+a retired channel is a change in this repo alone.
+
+That independence costs nothing in Apify spend, because these five pages would otherwise
+be scraped by the internal tool instead, not in addition. It buys two things the internal
+collector cannot give us: full ad copy, where it truncates to 500 characters and would
+drop geography mentioned late in a long body, and a census rather than the top 35 ads by
+impressions.
+
+`--source internal` remains available for the day this client is also an internal client,
+where a second scrape would genuinely be paying twice.
 
 **What the ad numbers mean.** The Meta Ad Library exposes no targeting, audience
 location, DMA or delivery region for commercial ads anywhere, and US commercial ads are
