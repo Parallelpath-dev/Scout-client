@@ -122,7 +122,12 @@
       "ballston",
       "clarendon",
       "rosslyn",
-      "del ray"
+      "del ray",
+      "metropolitan washington",
+      "washington metropolitan",
+      "washington metro",
+      "washington, d.c",
+      "the district"
     ],
     "_scope_note": [
       "The District plus the inner Arlington/Alexandria ring only. Two of the five",
@@ -147,6 +152,20 @@
         "dc",
         "washington",
         "navy"
+      ],
+      "washington": [
+        "dc",
+        "d.c",
+        "metropolitan",
+        "metro",
+        "district",
+        "nw",
+        "ne",
+        "se",
+        "sw",
+        "capital",
+        "beltway",
+        "ymca"
       ]
     }
   },

@@ -241,6 +241,11 @@ def _run_one(
 # ── shaping ─────────────────────────────────────────────────────────────────
 
 
+def tally_ids(rollup: list[dict[str, Any]]) -> list[str]:
+    """Competitor ids present in this week's rollup."""
+    return [r["competitor_id"] for r in rollup]
+
+
 def week_of(d: date | None = None) -> date:
     """Monday of the collection week. One row per competitor per week, keyed on this."""
     d = d or datetime.now(timezone.utc).date()
@@ -368,6 +373,12 @@ def build_rows(
                     "page_name": snap.get("pageName"),
                     "body": body[:2000],
                     "title": text_fields.get("title"),
+                    # Every field the classifier actually scanned, not just the two
+                    # that happen to be at the top level. Two thirds of real ads are
+                    # dynamic creative whose only copy lives on the cards, so without
+                    # this an audit of a suspicious `none` needs a second paid scrape
+                    # to see what the classifier saw. It cost one to learn that.
+                    "text_scanned": {k: v[:600] for k, v in text_fields.items()},
                     "cta_text": text_fields.get("cta_text"),
                     "cta_type": snap.get("ctaType"),
                     "display_format": snap.get("displayFormat"),
@@ -414,24 +425,46 @@ def build_rows(
     for cid, counts in tally.items():
         sampled = counts["total_active"]
         available = totals_by_comp.get(cid)
+        cap = (channels_by_comp.get(cid) or {}).get("max_ads")
+
+        # How we know we got everything, without the library telling us.
+        #
+        # This actor returns bare ad objects with no wrapper carrying the page's own
+        # total, so `available` is usually None and an earlier version recorded
+        # sample_method='unknown' for every competitor. That is worse than useless: an
+        # unknown denominator is the exact condition this build exists to avoid
+        # reporting through.
+        #
+        # But the inference is sound. When a channel has no cap we ask for
+        # RESULTS_LIMIT_PER_PAGE, which is a runaway guard rather than a sampling
+        # policy. If fewer came back than we asked for, nothing was truncated: we have
+        # the whole page. Onelife, the largest advertiser in this set, returned 266
+        # against a ceiling of 800.
+        #
+        # Only claim census when BOTH are true — uncapped, and under the ceiling.
+        # A pull that hits the ceiling exactly is the one case where we genuinely
+        # cannot tell, and it stays 'unknown' rather than being rounded up to a
+        # reassuring answer.
+        if available is not None:
+            method = "census" if sampled >= available else "top_by_impressions"
+        elif cap:
+            method = "top_by_impressions"
+            available = None
+        elif sampled < RESULTS_LIMIT_PER_PAGE:
+            method = "census"
+            available = sampled
+        else:
+            method = "unknown"
+
         rollup.append(
             {
                 "client_id": client_id,
                 "competitor_id": cid,
                 "week_of": wk.isoformat(),
                 "collected_at": collected_at,
-                # The library's own total for the page. The headline number.
                 "total_available": available,
-                # What was actually classified. The tier counts sum to this.
                 "ads_sampled": sampled,
-                # census only when we demonstrably got everything. Anything else is a
-                # sample sorted by impressions, which is biased toward the highest-spend
-                # creative and must never be extrapolated.
-                "sample_method": (
-                    "census"
-                    if available is not None and sampled >= available
-                    else ("top_by_impressions" if available is not None else "unknown")
-                ),
+                "sample_method": method,
                 **counts,
             }
         )
@@ -480,7 +513,11 @@ def main() -> int:
     competitors = sb.get(
         "portal",
         "competitors",
-        {"client_id": f"eq.{client_id}", "active": "eq.true", "select": "id,name,domain"},
+        {
+            "client_id": f"eq.{client_id}",
+            "active": "eq.true",
+            "select": "id,name,domain,single_market",
+        },
     )
     channels = sb.get(
         "portal",
@@ -644,28 +681,45 @@ def main() -> int:
     )
 
     name_of = {c["id"]: c["name"] for c in competitors}
+    single = {c["id"]: bool(c.get("single_market")) for c in competitors}
+
     print(f"\n  week of {target_week}")
     print(f"  {'competitor':<22} {'avail':>6} {'sampled':>8} {'dc_ref':>7} {'land':>5} "
           f"{'expl':>5} {'regl':>5} {'other':>6} {'none':>5}  method")
-    for row in sorted(rollup, key=lambda r: -(r.get("total_available") or 0)):
+    for row in sorted(rollup, key=lambda r: -(r["ads_sampled"] or 0)):
+        cid = row["competitor_id"]
         dc_ref = row["dc_landing"] + row["dc_explicit"]
         avail = row.get("total_available")
+        # A single-market brand's ratio is not reported, because every ad they run is
+        # in-market whether the copy says so or not. Printing 0/21 for a brand that
+        # only advertises here says the opposite of the truth.
+        dc_cell = "in-mkt" if single.get(cid) else str(dc_ref)
         print(
-            f"  {name_of.get(row['competitor_id'], '?'):<22} "
+            f"  {name_of.get(cid, '?'):<22} "
             f"{(avail if avail is not None else '?'):>6} {row['ads_sampled']:>8} "
-            f"{dc_ref:>7} {row['dc_landing']:>5} {row['dc_explicit']:>5} "
+            f"{dc_cell:>7} {row['dc_landing']:>5} {row['dc_explicit']:>5} "
             f"{row['regional']:>5} {row['other_market']:>6} {row['no_geo']:>5}  "
             f"{row['sample_method']}"
         )
+
+    n_single = sum(1 for cid in tally_ids(rollup) if single.get(cid))
+    if n_single:
+        print(
+            f"\n  {n_single} of {len(rollup)} competitors operate ONLY in this market,\n"
+            "  shown as 'in-mkt'. Every ad they run is local by definition, so a\n"
+            "  DC-referencing ratio for them would read as absence when it means\n"
+            "  their creative is placeless. The ratio is meaningful only for the\n"
+            "  brands that also advertise somewhere else."
+        )
+
     partial = [r for r in rollup if r["sample_method"] != "census"]
     if partial:
-        # Said out loud every run. A rate from an impression-sorted sample describes the
-        # highest-spend creative, not the page, and extrapolating it is the single
-        # easiest way to hand a client a number that is wrong by an order of magnitude.
+        names = ", ".join(name_of.get(r["competitor_id"], "?") for r in partial)
         print(
-            f"\n  {len(partial)} of {len(rollup)} competitors were SAMPLED, not censused.\n"
-            "  The tier counts are out of `sampled`, not `avail`. Do not extrapolate:\n"
-            "  the sample is sorted by impressions and is biased toward the top spenders."
+            f"\n  NOT a census for: {names}.\n"
+            "  Their tier counts are out of `sampled`, not `avail`. Do not extrapolate:\n"
+            "  the Ad Library sorts by impressions, so a capped pull describes the\n"
+            "  highest-spend creative rather than the page."
         )
     if unmatched:
         print(f"\n  unmatched page ids (dropped): {unmatched}")

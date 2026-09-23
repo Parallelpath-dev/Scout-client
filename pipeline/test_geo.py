@@ -459,6 +459,50 @@ check(
 )
 
 
+# ── what the first real collection run taught ───────────────────────────────
+# 380 real ads, 23 Sep 2026. These cases come from copy that actually ran.
+
+# Five YMCA ads are titled exactly this and scored `none`, because the vocabulary
+# had the spelled-out forms and not the one they use.
+check(
+    "'Metropolitan Washington' is dc_explicit",
+    tier({"title": "YMCA of Metropolitan Washington"}),
+    TIER_DC_EXPLICIT,
+)
+
+# Bare "Washington" stays ambiguous. It is a state, a university, a president and
+# a great many street names.
+check(
+    "'Washington University' is not DC",
+    tier({"body": "Proud partner of Washington University athletics."}),
+    TIER_NONE,
+)
+check(
+    "'Washington state' is not DC",
+    tier({"body": "Now open at our Washington state locations."}),
+    TIER_NONE,
+)
+check(
+    "'Washington, DC' still hits",
+    tier({"body": "Proud to serve Washington, DC since 1905."}),
+    TIER_DC_EXPLICIT,
+)
+
+# Movement's real creative, verbatim in shape: national copy, national landing page.
+# `none` is the CORRECT answer here and the test exists so nobody "fixes" it later.
+check(
+    "genuinely placeless national creative stays none",
+    tier(
+        {"body": "Climbing. Yoga. Fitness. Community. Get 15 days of unlimited access "
+                 "for less than the price of two day passes!",
+         "title": "2 Weeks Unlimited Climbing"},
+        urls=["https://movementgyms.com/trial-membership/"],
+        domain="movementgyms.com",
+    ),
+    TIER_NONE,
+)
+
+
 # ── report ──────────────────────────────────────────────────────────────────
 
 if FAILS:
