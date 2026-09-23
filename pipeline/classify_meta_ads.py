@@ -76,6 +76,7 @@ from typing import Any, Iterable
 import requests
 
 from geo import GeoClassifier, campaign_scope_hint, extract_ad_fields, is_recruitment
+from supa import Supa
 
 ACTOR = "apify~facebook-ads-scraper"
 APIFY_BASE = "https://api.apify.com/v2"
@@ -97,66 +98,6 @@ AD_LIBRARY_URL = (
 # active ads on 11 Sep, so anything approaching this number means something changed
 # upstream rather than a competitor tripling their spend overnight.
 RESULTS_LIMIT_PER_PAGE = 800
-
-
-# ── Supabase ────────────────────────────────────────────────────────────────
-
-
-class Supa:
-    """Thin PostgREST client. Service role, so RLS does not apply to anything here."""
-
-    def __init__(self, url: str, key: str):
-        self.url = url.rstrip("/")
-        self.h = {
-            "apikey": key,
-            "Authorization": f"Bearer {key}",
-            "Content-Type": "application/json",
-        }
-
-    def _headers(self, schema: str, extra: dict[str, str] | None = None) -> dict[str, str]:
-        h = dict(self.h)
-        # PostgREST needs the profile header for a non-default schema, and it differs
-        # between reads and writes: Accept-Profile for GET, Content-Profile for the rest.
-        h["Accept-Profile"] = schema
-        h["Content-Profile"] = schema
-        if extra:
-            h.update(extra)
-        return h
-
-    def get(self, schema: str, table: str, params: dict[str, str]) -> list[dict[str, Any]]:
-        r = requests.get(
-            f"{self.url}/rest/v1/{table}",
-            headers=self._headers(schema),
-            params=params,
-            timeout=60,
-        )
-        r.raise_for_status()
-        return r.json()
-
-    def upsert(
-        self, schema: str, table: str, rows: list[dict[str, Any]], on_conflict: str | None = None
-    ) -> int:
-        if not rows:
-            return 0
-        params = {}
-        prefer = "resolution=merge-duplicates,return=minimal"
-        if on_conflict:
-            params["on_conflict"] = on_conflict
-        written = 0
-        # Chunked so one oversized week cannot produce a request PostgREST refuses.
-        for i in range(0, len(rows), 250):
-            chunk = rows[i : i + 250]
-            r = requests.post(
-                f"{self.url}/rest/v1/{table}",
-                headers=self._headers(schema, {"Prefer": prefer}),
-                params=params,
-                data=json.dumps(chunk),
-                timeout=120,
-            )
-            if r.status_code >= 400:
-                raise RuntimeError(f"{table} upsert failed {r.status_code}: {r.text[:500]}")
-            written += len(chunk)
-        return written
 
 
 # ── Apify ───────────────────────────────────────────────────────────────────

@@ -62,6 +62,7 @@ jobs:
           cd pipeline
           python3 test_geo.py
           python3 test_web_change.py
+          python3 test_email_classify.py
 
       - name: Collect and classify Meta ads
         run: |
@@ -87,3 +88,19 @@ jobs:
             ARGS="$ARGS --dry-run"
           fi
           cd pipeline && python3 collect_web_changes.py $ARGS
+
+      # Email arrives continuously via the portal-inbound-email webhook and is stored
+      # raw; this is the step that turns it into signals. It reads whatever accumulated
+      # since the last run, so a skipped week is caught up rather than lost.
+      #
+      # --week is deliberately NOT passed. Each message is filed under the week it was
+      # SENT, read off its own headers; forcing them all into the run's week would put a
+      # fortnight of backlog into one Monday.
+      - name: Classify inbound email
+        if: always()
+        run: |
+          ARGS="--client ${{ github.event.inputs.client_slug || 'bouldering-project' }}"
+          if [ "${{ github.event.inputs.dry_run }}" = "true" ]; then
+            ARGS="$ARGS --dry-run"
+          fi
+          cd pipeline && python3 classify_emails.py $ARGS
