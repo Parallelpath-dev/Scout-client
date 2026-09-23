@@ -67,6 +67,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import re
 import sys
 import time
 from datetime import date, datetime, timedelta, timezone
@@ -573,26 +574,70 @@ def main() -> int:
     ads = flatten(raw)
     print(f"  {len(ads)} ads after flattening")
 
-    # The Ad Library's own total sits on the wrapper, not on any individual ad, and it is
-    # a different number from how many were pulled. `total_active_ads` in the internal
-    # payload is the SAMPLE SIZE despite the name; `total_available_ads` is the real
-    # total. Reading the name rather than the meaning is how a 35 gets reported as a 367.
+    # The Ad Library's own total for a page is a different number from how many ads
+    # were pulled, and it lives in a different place depending on the source:
+    #
+    #   apify   the actor puts `totalCount` on its own wrapper object, alongside the
+    #           `url` that was requested. The url carries view_all_page_id, which is
+    #           the only reliable way back to a competitor: the first ad's page_id can
+    #           belong to a co-branded advertiser rather than the page we asked for.
+    #   internal  the pipeline stores `total_available_ads` on the signal payload, and
+    #           `total_active_ads` next to it is the SAMPLE SIZE despite the name.
+    #
+    # Reading the name rather than the meaning is how a 35 gets reported as a 367.
     page_to_comp = {
         str(ch["external_id"]): cid
         for cid, ch in channels_by_comp.items()
         if ch.get("external_id")
     }
+
+    def _page_id_from_url(u: str | None) -> str | None:
+        if not isinstance(u, str):
+            return None
+        m = re.search(r"view_all_page_id=(\d+)", u)
+        return m.group(1) if m else None
+
     totals_by_comp: dict[str, int] = {}
     for item in raw:
-        payload = item.get("data") if isinstance(item.get("data"), dict) else item
-        if not isinstance(payload, dict):
+        if not isinstance(item, dict):
             continue
-        avail = payload.get("total_available_ads")
-        first = next((a for a in (payload.get("ads") or []) if isinstance(a, dict)), None)
-        pid = page_id_of(first) if first else None
-        cid = page_to_comp.get(str(pid or ""))
+        payload = item.get("data") if isinstance(item.get("data"), dict) else item
+
+        cid = None
+        avail = None
+
+        # apify wrapper
+        pid = _page_id_from_url(payload.get("url") or payload.get("inputUrl"))
+        if pid:
+            cid = page_to_comp.get(pid)
+            avail = payload.get("totalCount")
+            if avail is None:
+                results = payload.get("results")
+                if isinstance(results, list):
+                    avail = next(
+                        (r.get("totalCount") for r in results
+                         if isinstance(r, dict) and r.get("totalCount") is not None),
+                        None,
+                    )
+
+        # internal payload
+        if cid is None:
+            avail = payload.get("total_available_ads")
+            first = next((a for a in (payload.get("ads") or []) if isinstance(a, dict)), None)
+            cid = page_to_comp.get(str(page_id_of(first) or "")) if first else None
+
         if cid and isinstance(avail, (int, str)) and str(avail).isdigit():
             totals_by_comp[cid] = max(totals_by_comp.get(cid, 0), int(avail))
+
+    if not totals_by_comp:
+        # Not fatal, but it means every row records sample_method='unknown', and an
+        # unknown denominator is the condition this whole build exists to avoid
+        # reporting through.
+        print(
+            "  WARNING could not read the Ad Library's own totals from the source.\n"
+            "  Every competitor will record sample_method='unknown' and `avail` will\n"
+            "  print as '?'. The tier counts are still correct out of `sampled`."
+        )
 
     signals, rollup, unmatched = build_rows(
         ads, competitors, channels_by_comp, client_id, GeoClassifier(), totals_by_comp
