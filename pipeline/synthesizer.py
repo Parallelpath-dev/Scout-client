@@ -504,6 +504,11 @@ How to read the digest:
 - Name a competitor's location in full, never a short form a DC reader could take for a
   neighbourhood: a /columbia/ landing page is "Columbia, MD".
 - Cite every signal a claim rests on. A claim from a social post cites that post.
+- campaign_signals: flag a competitor only when the SAME theme shows up on two or more
+  channels this week. Channels are paid ads, organic social, email and website; several
+  social platforms are one channel. Cite signals from each channel, one evidence line per
+  channel. Volume alone is never a campaign: many ads on one message is one channel.
+  Different topics on different channels are not a campaign. No shared theme, empty list.
 - Keyword search volumes, if quoted, are the DC figures in the digest or none at all.
 - social: account_scope "local" is a location account and its posts are ground-level
   DC content. "regional" and "national" are the DMV or corporate feed; only their posts
@@ -538,6 +543,11 @@ ANALYST_SCHEMA = """{
     }
   ],
   "sections": {
+    "overview": {
+      "campaign_signals": [{"competitor": "<name>", "theme": "<the shared message, aim for 10 words, hard limit 15>",
+                            "evidence": ["<what one channel shows, aim for 20 words, hard limit 30>", "<the next channel>"],
+                            "signal_ids": ["<refs from at least two channels>"]}]
+    },
     "search": {
       "keyword_movement": [{"keyword": "<kw>", "observation": "<aim for 35 words, hard limit 40>", "signal_ids": ["<id>"]}],
       "demand_shifts": []
@@ -914,6 +924,32 @@ def _repair_block(raw: dict[str, Any], failures: list[str], devs: list[dict[str,
             + "\n\n## YOUR PREVIOUS ANSWER\n" + json.dumps(raw, indent=1))
 
 
+CHANNEL_OF = {"ad_active": "paid", "social_post": "social", "social_profile": "social",
+              "email": "email", "web_change": "web"}
+
+
+def campaign_channels(items: Any, by_id: dict[str, dict[str, Any]]
+                      ) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    """Keep a campaign signal only if its cited signals really span two channels.
+
+    The model names the theme; code checks the evidence. Channels come from the cited
+    signals' types, never from what the model says, and confidence follows from how
+    many there are: two is medium, three or more is high.
+    """
+    keep, drop = [], []
+    for x in items if isinstance(items, list) else []:
+        if not isinstance(x, dict):
+            continue
+        chans = sorted({CHANNEL_OF[by_id[i]["signal_type"]]
+                        for i in (x.get("signal_ids") or [])
+                        if i in by_id and by_id[i].get("signal_type") in CHANNEL_OF})
+        if len(chans) < 2:
+            drop.append(x)
+            continue
+        keep.append(dict(x, channels=chans, confidence="high" if len(chans) >= 3 else "medium"))
+    return keep, drop
+
+
 def _name_devs(failures: list[str], devs: list[dict[str, Any]]) -> list[str]:
     """dev[n] is the gate's position after ordering; the model needs the headline."""
     out = []
@@ -959,6 +995,9 @@ def _assemble(analysis: dict[str, Any], *, client: dict[str, Any], digest: dict[
     merged = {t: (dict(v) if isinstance(v, dict) else {}) for t, v in found.items()}
     for t, items in tab_recs.items():
         merged.setdefault(t, {})["recommendations"] = items
+    campaigns, not_campaigns = campaign_channels(
+        (merged.get("overview") or {}).get("campaign_signals"), by_id)
+    merged.setdefault("overview", {})["campaign_signals"] = campaigns
     # The same shape filter and uncited-drop as the findings, and then the same gate.
     sections, uncited = _sections(merged)
 
@@ -1000,6 +1039,9 @@ def _assemble(analysis: dict[str, Any], *, client: dict[str, Any], digest: dict[
         row["full_report"]["validation"]["warnings"].append(
             f"suppressed single-signal or low-confidence development: "
             f"{str(d.get('headline'))[:80]}")
+    for x in not_campaigns:
+        row["full_report"]["validation"]["warnings"].append(
+            f"dropped campaign signal on one channel: {str(x.get('theme'))[:80]}")
     for where, x in uncited:
         row["full_report"]["validation"]["warnings"].append(
             f"dropped uncited {where} item: {str(x.get('observation') or x.get('message'))[:80]}")
@@ -1018,6 +1060,7 @@ def _sections(s: dict[str, Any]) -> tuple[dict[str, Any], list[tuple[str, dict]]
     not in the digest is kept: that is fabrication, and the gate must see it.
     """
     shape = {
+        "overview": ("campaign_signals",),
         "search": ("keyword_movement", "demand_shifts", "recommendations"),
         "paid": ("live_ad_creative", "spend_signals", "recommendations"),
         "social": ("audience_cadence", "content_themes", "recommendations"),

@@ -770,7 +770,6 @@ function promiseBlocks(id, starts){
    same row level security. The page counts and plots; it never writes a
    claim of its own. */
 const CHANNELS = [['paid','Paid'],['search','Search'],['web','Website'],['social','Social'],['email','Email']];
-const FLOW = ['paid','social','web','email'];   // what a competitor does, not what it has
 const SECTION_KEYS = {
   search:[['keyword_movement','Keyword notes'],['demand_shifts','Demand shifts']],
   paid:[['live_ad_creative','What the ads lead with'],['spend_signals','Spend signals']],
@@ -950,24 +949,26 @@ function scoreTable(pr){
     ${setBased ? `<p class="fine">Where a competitor has less than four weeks of history on a channel, that channel compares them with the rest of the set this week, and moves to their own normal as history builds. Paid compares new launches, never how many ads a brand runs.</p>` : ''}`);
 }
 
-/* Two or more activity channels above normal in the same week. The same test
-   internal Scout applies ("2+ channels co-firing"), run on the scores code
-   computed rather than asked of the model. */
+/* Coordinated campaign signals, the internal tool's rule: one theme showing up on two or
+   more channels in the same week. The Analyst names the theme and cites the signals;
+   the pipeline keeps it only if those signals span two channels. The page adds each
+   channel's activity score as context, so "a campaign" and "a busy week" read apart. */
 function campaigns(b){
-  const pr = (b.full_report || {}).pressure || {};
-  const devs = Array.isArray(b.developments) ? b.developments : [];
-  const found = (pr.competitors || []).map(c => {
-    const hot = FLOW.map(k => [k, (c.components || {})[k]]).filter(([, x]) => x && hi(x.score));
-    return { c, hot };
-  }).filter(r => r.hot.length >= 2);
-  const body = found.length ? found.map(({ c, hot }) => {
-    const dev = devs.find(d => d.competitor === c.competitor);
-    const label = { paid:'Paid', social:'Social', web:'Website', email:'Email' };
+  const fr = b.full_report || {};
+  const list = (((fr.sections || {}).overview || {}).campaign_signals || []).filter(x => x && x.theme);
+  const comps = (fr.pressure || {}).competitors || [];
+  const label = { paid:'Paid', social:'Social', web:'Website', email:'Email' };
+  const body = list.length ? list.map(x => {
+    const c = comps.find(k => k.competitor === x.competitor) || {};
+    const act = (x.channels || []).map(ch => { const k = (c.components || {})[ch];
+      return k && typeof k.score === 'number' ? `${label[ch] || ch} ${k.score}` : label[ch] || ch; });
     return `<div class="campaign"><div class="top">
-        <h4>${esc(c.competitor)}${dev ? ': ' + esc(dev.headline) : ''}</h4>
-        <span class="chip">${hot.length >= 3 ? 'High' : 'Medium'} confidence · ${hot.length} channels</span></div>
-      <ul>${hot.map(([k, x]) => `<li>${label[k]} at ${x.score}, ${x.basis === 'own' ? 'above their own normal' : 'above the rest of the set this week'}</li>`).join('')}</ul></div>`;
-  }).join('') : empty('No coordinated push this week. Scout flags a competitor when two or more of paid, social, website and email run above normal in the same week.');
+        <h4>${esc(x.competitor)}: ${esc(x.theme)}</h4>
+        <span class="chip">${esc(x.confidence === 'high' ? 'High' : 'Medium')} confidence · ${(x.channels || []).length} channels</span></div>
+      ${Array.isArray(x.evidence) && x.evidence.length ? `<ul>${x.evidence.map(e => `<li>${esc(e)}</li>`).join('')}</ul>` : ''}
+      ${act.length ? `<p class="fine" style="margin-top:10px">Activity this week: ${esc(act.join(' · '))}. 50 is a normal week.</p>` : ''}
+    </div>`;
+  }).join('') : empty('No coordinated campaign this week. Scout flags a competitor when the same theme shows up on two or more of paid, social, website and email in the same week.');
   return sec('Coordinated campaign signals', '', body);
 }
 
