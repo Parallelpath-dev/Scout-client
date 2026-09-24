@@ -13,8 +13,13 @@ mode: no briefing beats a wrong one.
     python validate_briefing.py --selftest                  # no DB needed
     python validate_briefing.py --client bouldering-project # validate latest, hold on fail
     python validate_briefing.py --client X --dry-run        # report only, change nothing
+    python validate_briefing.py --client X --week 2026-09-21
 
-Standard library only, except for the optional Supabase path.
+synthesizer.py calls validate() directly before it writes. The CLI re-checks the latest
+stored briefing, for a week edited by hand or a rule changed after the fact. Both read
+the week's signals through week_window.py, so they agree on what "this week" means.
+
+Standard library only, except for the Supabase path, which uses supa.py.
 """
 
 import argparse
@@ -66,6 +71,13 @@ ANTITHESIS = re.compile(
     r"\bnot\s+(?:just\s+)?[^.;,]{2,45}[,.]?\s+(?:it'?s|but rather|but)\b", re.I
 )
 EM_DASH = re.compile(r"[—–]")
+# Topics the client context says are raised on a call and never put in writing. A match
+# is a failure, not a warning: a held week costs a day, a sentence in a client's inbox
+# cannot be taken back. Bouldering Project: the Columbia Heights / Eckington overlap.
+NEVER_IN_WRITING = [
+    re.compile(r"\bcannibali[sz]", re.I),
+    re.compile(r"\b(?:self|intra)[- ]?(?:brand )?competi", re.I),
+]
 # Heuristics for a response that was cut off rather than finished.
 TRUNCATED = re.compile(r"(?:\w-|\b(?:and|the|to|of|a|in|with|for|that))\s*$", re.I)
 
@@ -99,7 +111,7 @@ def words(text):
     return len([w for w in re.split(r"\s+", (text or "").strip()) if w])
 
 
-def check_text(rep, where, text, cap):
+def check_text(rep, where, text, cap, never=()):
     """Every rule that applies to any client-facing string."""
     if not text or not str(text).strip():
         rep.fail(where, "empty")
@@ -118,6 +130,9 @@ def check_text(rep, where, text, cap):
         rep.fail(where, "two-beat antithesis (\"not X, it's Y\")")
     if TRUNCATED.search(text.rstrip()):
         rep.fail(where, "looks truncated mid-sentence")
+    for rx in never:
+        if rx.search(text):
+            rep.fail(where, f"topic kept out of writing: {rx.pattern!r}")
     for j in JARGON:
         if re.search(rf"\b{re.escape(j)}\b", low):
             rep.warn(where, f"jargon: {j!r}")
@@ -126,9 +141,10 @@ def check_text(rep, where, text, cap):
             rep.warn(where, f"adverb: {a!r}")
 
 
-def validate(briefing, week_signal_ids, profile="executive"):
+def validate(briefing, week_signal_ids, profile="executive", never_in_writing=()):
     """Validate one briefing. week_signal_ids = every signal id collected that week."""
     rep = Report()
+    nv = tuple(never_in_writing)
 
     if not isinstance(briefing, dict):
         rep.fail("briefing", "not a JSON object — synthesis or parsing failed")
@@ -143,7 +159,7 @@ def validate(briefing, week_signal_ids, profile="executive"):
 
     # ── summary ──
     summary = briefing.get(F_SUMMARY)
-    check_text(rep, "summary", summary, CAPS["summary"])
+    check_text(rep, "summary", summary, CAPS["summary"], nv)
     if summary:
         low = str(summary).lstrip().lower()
         for opener in GENERIC_OPENERS:
@@ -170,17 +186,17 @@ def validate(briefing, week_signal_ids, profile="executive"):
         if not isinstance(dev, dict):
             rep.fail(where, "not an object")
             continue
-        check_text(rep, f"{where}.headline", dev.get(F_HEADLINE), CAPS["headline"])
-        check_text(rep, f"{where}.so_what", dev.get(F_SO_WHAT), CAPS["so_what"])
+        check_text(rep, f"{where}.headline", dev.get(F_HEADLINE), CAPS["headline"], nv)
+        check_text(rep, f"{where}.so_what", dev.get(F_SO_WHAT), CAPS["so_what"], nv)
         if dev.get(F_RECOMMENDATION) is not None:
             check_text(rep, f"{where}.recommendation",
-                       dev.get(F_RECOMMENDATION), CAPS["recommendation"])
+                       dev.get(F_RECOMMENDATION), CAPS["recommendation"], nv)
         for k, v in dev.items():
             if k in (F_HEADLINE, F_SO_WHAT, F_RECOMMENDATION, F_SIGNALS,
                      F_CONFIDENCE, F_SOURCE):
                 continue
             if isinstance(v, str) and v.strip():
-                check_text(rep, f"{where}.{k}", v, CAPS["_default"])
+                check_text(rep, f"{where}.{k}", v, CAPS["_default"], nv)
         _check_evidence(rep, where, dev, week_signal_ids, suppress_low=True)
 
     return rep
@@ -211,56 +227,54 @@ def _check_evidence(rep, where, dev, week_signal_ids, suppress_low):
 
 # ── Supabase path ────────────────────────────────────────────────────────────
 
-def _client():
-    from supabase import create_client
-    return create_client(os.environ["SUPABASE_URL"], os.environ["SUPABASE_SERVICE_KEY"])
+def run_for_client(slug, week=None, dry_run=False):
+    """Re-validate the stored briefing for a week (default: the latest) and hold it on
+    failure. portal schema, through supa.py, like every other script in this repo."""
+    from supa import Supa
+    from week_window import fetch_week_signals, week_of
 
+    sb = Supa(os.environ["SUPABASE_URL"], os.environ["SUPABASE_SERVICE_KEY"])
+    c = sb.get("public", "clients", {"slug": f"eq.{slug}", "select": "id,name,output_profile"})
+    if not c:
+        print(f"[validate] no client with slug {slug}")
+        return 2
+    client = c[0]
+    profile = client.get("output_profile") or "operator"
 
-def run_for_client(slug, dry_run=False):
-    sb = _client()
-    c = sb.table("clients").select("id,name,output_profile").eq("slug", slug).single().execute()
-    client_id = c.data["id"]
-    profile = c.data.get("output_profile") or "operator"
-
-    b = (sb.table("briefings").select("id,week_of,summary,developments,full_report")
-         .eq("client_id", client_id).order("week_of", desc=True).limit(1).execute())
-    if not b.data:
+    params = {"client_id": f"eq.{client['id']}",
+              "select": "id,week_of,summary,developments,published_at",
+              "order": "week_of.desc", "limit": "1"}
+    if week:
+        params["week_of"] = f"eq.{week}"
+    rows = sb.get("portal", "briefings", params)
+    if not rows:
         print(f"[validate] no briefing for {slug}")
         return 0
-    row = b.data[0]
+    row = rows[0]
 
+    # The columns are the source of truth. full_report is jsonb in this schema and
+    # holds the sections, not a second copy of what the client reads.
     briefing = {"summary": row.get("summary"), "developments": row.get("developments") or []}
-    # full_report is text in this schema; if it parses as JSON it wins, since it is
-    # the complete object the model returned.
-    try:
-        parsed = json.loads(row.get("full_report") or "")
-        if isinstance(parsed, dict):
-            briefing = parsed
-    except (ValueError, TypeError):
-        pass
 
-    from datetime import datetime, timedelta
-    cutoff = (datetime.utcnow() - timedelta(days=8)).isoformat()
-    sig = (sb.table("signals").select("id")
-           .eq("client_id", client_id).gte("collected_at", cutoff).execute())
-    week_ids = {s["id"] for s in (sig.data or [])}
+    from datetime import date as _date
+    wk = week_of(_date.fromisoformat(str(row["week_of"])[:10]))
+    week_ids = {s["id"] for s in fetch_week_signals(sb, client["id"], wk, select="id,signal_type,week_of,collected_at")}
 
-    rep = validate(briefing, week_ids, profile)
-    print(f"[validate] {c.data['name']} · week of {row['week_of']} · profile={profile}")
+    rep = validate(briefing, week_ids, profile, never_in_writing=NEVER_IN_WRITING)
+    print(f"[validate] {client['name']} · week of {row['week_of']} · profile={profile}")
     print(rep.render())
 
     if rep.ok:
         print("[validate] PASS")
         return 0
-
     if dry_run:
-        print("[validate] FAIL (dry run — nothing changed)")
+        print("[validate] FAIL (dry run, nothing changed)")
         return 1
 
-    sb.table("briefings").update({"published_at": None}).eq("id", row["id"]).execute()
-    print(f"[validate] FAIL — briefing {row['id']} HELD. Client cannot see it.")
-    print("[validate] Fix and re-run synthesis, or publish manually after review:")
-    print(f"           update briefings set published_at = now() where id = '{row['id']}';")
+    sb.patch("portal", "briefings", {"id": f"eq.{row['id']}"}, {"published_at": None})
+    print(f"[validate] FAIL. Briefing {row['id']} HELD. The client cannot see it.")
+    print("[validate] Fix and re-run synthesis, or publish by hand after review:")
+    print(f"           update portal.briefings set published_at = now() where id = '{row['id']}';")
     return 1
 
 
@@ -320,7 +334,13 @@ def selftest():
     b = validate(bad, ids)
     print(b.render())
 
-    ok = g.ok and not b.ok
+    print("\nNEVER-IN-WRITING — expect a failure:")
+    leak = json.loads(json.dumps(good))
+    leak["developments"][0]["so_what"] = "Members may cannibalise the Eckington gym."
+    n = validate(leak, ids, never_in_writing=NEVER_IN_WRITING)
+    print(n.render())
+
+    ok = g.ok and not b.ok and not n.ok
     print(f"\nself-test {'PASSED' if ok else 'FAILED'} "
           f"(good clean: {g.ok}, bad caught: {not b.ok}, "
           f"{len(b.failures)} failures found)")
@@ -330,6 +350,7 @@ def selftest():
 if __name__ == "__main__":
     ap = argparse.ArgumentParser()
     ap.add_argument("--client")
+    ap.add_argument("--week", help="week_of (a Monday) to re-check; default latest")
     ap.add_argument("--dry-run", action="store_true")
     ap.add_argument("--selftest", action="store_true")
     a = ap.parse_args()
@@ -337,4 +358,4 @@ if __name__ == "__main__":
         sys.exit(selftest())
     if not a.client:
         ap.error("--client or --selftest required")
-    sys.exit(run_for_client(a.client, a.dry_run))
+    sys.exit(run_for_client(a.client, a.week, a.dry_run))

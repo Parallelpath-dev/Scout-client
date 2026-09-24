@@ -28,6 +28,9 @@ pipeline/classify_emails.py     collector — reads portal.inbound_emails, write
 pipeline/test_email_classify.py fixtures for the above
 
 pipeline/executive_profile.py   prompt constraints for the client-facing output profile
+pipeline/week_window.py         which signals belong to a briefing week. One definition.
+pipeline/synthesizer.py         signals -> one portal.briefings row. Analyst + Strategist.
+pipeline/test_synthesizer.py    fixtures for the above, with a fake model
 pipeline/validate_briefing.py   the gate. Holds a briefing rather than publishing a bad one.
 
 supabase/functions/portal-inbound-email/  receives mail from Resend. Stores, never judges.
@@ -39,16 +42,17 @@ migrations/004_signal_dedupe.sql  external_ref + week_of, so a re-run is idempot
 migrations/005_ad_sampling.sql    splits the library total from the classified sample
 migrations/006_channel_max_ads.sql per-channel ad cap. NULL = census, which is the default.
 migrations/007_service_role_grants.sql  service_role bypasses RLS but still needs GRANTs
-migrations/008_dedupe_not_partial.sql   PostgREST cannot ON CONFLICT a partial index
+migrations/008_dedupe_index_not_partial.sql  PostgREST cannot ON CONFLICT a partial index
 migrations/009_single_market.sql        brands that operate only in this market
 migrations/010_client_level_signals.sql competitor_id nullable, NULLS NOT DISTINCT
-migrations/011_channel_url_key.sql      channels unique key includes url; seeds pricing pages
+migrations/011_multiple_web_pages.sql   channels unique key includes url; seeds pricing pages
 migrations/012_prices_by_location.sql   Movement prices by home gym
 migrations/013_inbound_emails.sql       raw inbound mail. Every column nullable on purpose.
 
 scripts/test_isolation.py       proves a client login can't reach another client
 scripts/extract-brand.js        console script that pulls a client's palette
-.github/workflows/portal_weekly.yml  Mondays 08:00 UTC. No dependency on the internal tool.
+.github/workflows/portal_weekly.yml      Mondays 08:00 UTC. Collectors. No dependency on the internal tool.
+.github/workflows/portal_synthesize.yml  Mondays 15:00 UTC, after the Semrush task. Writes the briefing.
 ```
 
 ## How this fits with the internal tool
