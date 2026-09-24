@@ -269,7 +269,7 @@ def test_end_to_end_publishes():
     assert mov["source_url"] == "https://example.com/w1"
     assert all(x.get("recommendation") for x in row["developments"])
     fr = row["full_report"]
-    assert set(fr["sections"]) == {"search", "paid", "social", "owned"}
+    assert set(fr["sections"]) == {"overview", "search", "paid", "social", "owned"}
     assert "junk" not in fr["sections"]["paid"] and fr["sections"]["owned"]["website_changes"] == []
     assert fr["pressure"]["status"] == "scored"
     assert row["pressure_score"] == fr["pressure"]["score"] is not None
@@ -470,6 +470,25 @@ def test_tab_recommendation_with_invented_ref_holds():
     _, rep = sy.synthesize(client=CLIENT, digest=digest(), signals=window(), prior_score=None,
                            pressure=pressure(), model=m)
     assert not rep.ok and any("sections.social.recommendations" in f for f in rep.failures)
+
+
+def test_campaign_needs_one_theme_on_two_channels():
+    # Jack, 24 Sep: coordinated campaigns are a shared theme across channels, not only
+    # activity. The model names the theme; code proves the channels from the signals.
+    a = json.loads(json.dumps(GOOD_ANALYSIS))
+    a["sections"]["overview"] = {"campaign_signals": [
+        {"competitor": "Onelife", "theme": "$0 enrollment",
+         "evidence": ["A $0 enrollment email.", "A Tenleytown ad."], "signal_ids": ["e1", "a1"]},
+        {"competitor": "Onelife", "theme": "Ads everywhere",
+         "evidence": ["Many ads on one message."], "signal_ids": ["a1", "a2"]}]}
+    model, _ = fake_model(a, GOOD_STRATEGY)
+    row, rep = sy.synthesize(client=CLIENT, digest=digest(), signals=window(), prior_score=None,
+                             pressure=pressure(), model=model)
+    assert rep.ok, rep.render()
+    got = row["full_report"]["sections"]["overview"]["campaign_signals"]
+    assert [c["theme"] for c in got] == ["$0 enrollment"], "two ads are one channel"
+    assert got[0]["channels"] == ["email", "paid"] and got[0]["confidence"] == "medium"
+    assert any("one channel" in w for w in row["full_report"]["validation"]["warnings"])
 
 
 def test_source_url_is_never_the_models():

@@ -246,7 +246,8 @@ def _check_evidence(rep, where, dev, week_signal_ids, suppress_low):
         rep.warn(where, "no source_url — every item should be checkable in one click")
 
 
-SECTION_SKIP = {F_SIGNALS, "applies_locally", "format", "keyword", "competitor"}
+SECTION_SKIP = {F_SIGNALS, "applies_locally", "format", "keyword", "competitor",
+                "channels", "confidence"}
 
 
 def _check_sections(rep, sections, week_signal_ids, nv, profile):
@@ -265,6 +266,11 @@ def _check_sections(rep, sections, week_signal_ids, nv, profile):
                 for k, v in item.items():
                     if k not in SECTION_SKIP and isinstance(v, str) and v.strip():
                         check_text(rep, f"{where}.{k}", v, cap, nv)
+                    elif k not in SECTION_SKIP and isinstance(v, list):
+                        # Evidence lines are client-readable sentences like any other.
+                        for n, line in enumerate(v):
+                            if isinstance(line, str) and line.strip():
+                                check_text(rep, f"{where}.{k}[{n}]", line, cap, nv)
                     elif k in ("competitor", "keyword") and isinstance(v, str):
                         for rx in nv:
                             if rx.search(v):
