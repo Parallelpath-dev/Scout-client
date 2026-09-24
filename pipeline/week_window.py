@@ -13,10 +13,12 @@ A briefing for week W (a Monday) reads:
     Monday and stamp that Monday. Web changes are "since the last snapshot", so the
     Monday row already describes the week just gone.
 
-  * email filed under week_of = W - 7 as well. Email is filed under the week it was
-    SENT (classify_emails.py reads the message's own headers), so last Tuesday's promo
-    carries last Monday's week_of. Without this line the briefing would never see the
-    week's email at all.
+  * email filed under week_of = W - 7, and ONLY that. Email is filed under the week it
+    was SENT (classify_emails.py reads the message's own headers), so last Tuesday's
+    promo carries last Monday's week_of, and that is the week a Monday briefing covers.
+    An email sent on Monday W itself belongs to next Monday's briefing. Reading both
+    W and W-7 counted every email in two consecutive weeks, which the pressure history
+    would then have treated as a sustained ramp.
 
   * any row with no week_of, collected inside [W, W+7). A fallback for a writer that
     does not stamp week_of. It should match nothing; if it matches something, the
@@ -61,10 +63,10 @@ def in_window(signal: dict[str, Any], wk: date) -> bool:
     w = signal.get("week_of")
     if w:
         w = str(w)[:10]
-        if w == wk.isoformat():
-            return True
         prev = (wk - timedelta(days=7)).isoformat()
-        return w == prev and signal.get("signal_type") in FILED_BY_EVENT_DATE
+        if signal.get("signal_type") in FILED_BY_EVENT_DATE:
+            return w == prev
+        return w == wk.isoformat()
     c = str(signal.get("collected_at") or "")[:10]
     return bool(c) and wk.isoformat() <= c < (wk + timedelta(days=7)).isoformat()
 

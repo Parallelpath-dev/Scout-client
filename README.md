@@ -25,6 +25,10 @@ pipeline/collect_web_changes.py collector — fetches watched pages, diffs, writ
 pipeline/test_web_change.py     fixtures for the above
 pipeline/email_classify.py      what-kind-of-email scoring. Imports web_change's vocabulary.
 pipeline/classify_emails.py     collector — reads portal.inbound_emails, writes signals
+pipeline/apify.py               the Apify runner ads and social share. Raises on a failed run.
+pipeline/social_platforms.py    per-platform actor inputs and item normalizers. Pure.
+pipeline/collect_social.py      collector — organic posts + one profile row per channel
+pipeline/test_social.py         fixtures for the two above
 pipeline/test_email_classify.py fixtures for the above
 
 pipeline/executive_profile.py   prompt constraints for the client-facing output profile

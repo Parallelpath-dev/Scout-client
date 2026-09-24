@@ -132,6 +132,7 @@ def build_digest(
     email_channels: set[str],
     client_name: str,
     wk: date,
+    email_live: bool = True,
 ) -> dict[str, Any]:
     """Everything the Analyst is allowed to see, and nothing it is not.
 
@@ -271,8 +272,50 @@ def build_digest(
             item["caveat"] = d["caveat"]
         search.append(item)
 
-    # ── anything else: organic social once collected, and any new type ──────
-    known = set(RANKED_TYPES) | set(SEARCH_TYPES) | {"ad_active"}
+    # ── organic social: per channel, then the posts worth naming ────────────
+    posts_by_ch: dict[str, list[dict[str, Any]]] = {}
+    for s in signals:
+        if s["signal_type"] == "social_post":
+            posts_by_ch.setdefault(s.get("channel_id") or "", []).append(s)
+    social = []
+    for s in signals:
+        if s["signal_type"] != "social_profile":
+            continue
+        d = s.get("data") or {}
+        ps = posts_by_ch.get(s.get("channel_id") or "", [])
+
+        def eng(p: dict[str, Any]) -> int:
+            pd = p.get("data") or {}
+            return sum(int(pd.get(k) or 0) for k in ("likes", "comments", "shares"))
+
+        local = [p for p in ps if p.get("geo_relevance") in ("dc_landing", "dc_explicit", "regional")]
+        top = sorted((p for p in ps if p not in local), key=eng, reverse=True)
+        social.append({
+            "competitor": name(s.get("competitor_id")),
+            "platform": d.get("platform"),
+            "account": d.get("handle"),
+            "account_scope": s.get("source_scope"),
+            "location": d.get("location_label"),
+            "followers": d.get("followers"),
+            "posts_this_week": d.get("posts_in_week"),
+            "count_is_floor": bool(d.get("capped")),
+            "avg_engagement": d.get("avg_engagement"),
+            "latest_post": str(d.get("latest_post_at") or "")[:10] or None,
+            "signal_id": s["id"],
+            "posts": [
+                {"signal_id": p["id"], "geo_relevance": p.get("geo_relevance"),
+                 "geo_evidence": p.get("geo_evidence"),
+                 "text": _excerpt((p.get("data") or {}).get("text")),
+                 "format": (p.get("data") or {}).get("format"),
+                 "engagement": eng(p), "url": p.get("source_url"),
+                 "posted": str((p.get("data") or {}).get("posted_at") or "")[:10]}
+                for p in (local[:4] + top[:3])
+            ],
+        })
+    social.sort(key=lambda x: (x["competitor"], x["platform"] or ""))
+
+    # ── anything else: any signal type this file does not know yet ──────────
+    known = set(RANKED_TYPES) | set(SEARCH_TYPES) | {"ad_active", "social_post", "social_profile"}
     other = [
         {"signal_id": s["id"], "competitor": name(s.get("competitor_id")),
          "signal_type": s["signal_type"], "source_scope": s.get("source_scope"),
@@ -292,15 +335,28 @@ def build_digest(
                     if c["id"] in email_channels and c["id"] not in emailed)
     if no_email:
         coverage.append(f"No email list to monitor for {', '.join(no_email)}.")
-    if silent:
+    if not email_live:
+        coverage.append("Email monitoring began after the week this briefing covers, so "
+                        "competitor email is not reflected yet.")
+    elif silent:
         coverage.append(f"No email received this week from {', '.join(silent)}.")
     if paid:
         coverage.append("Ad counts that reference DC are a floor. Meta publishes no targeting "
                         "data, so an ad naming no place may still run here.")
     if any(i.get("accuracy") == "directional" for i in search):
         coverage.append("Paid keyword counts are directional estimates, not observed spend.")
-    if not other:
-        coverage.append("Organic social is not collected yet.")
+    if not social:
+        coverage.append("Organic social was not collected this week.")
+    else:
+        local_accounts = {x["competitor"] for x in social if x["account_scope"] == "local"}
+        corporate_only = sorted({x["competitor"] for x in social} - local_accounts)
+        if corporate_only:
+            coverage.append(f"No location account exists for {', '.join(corporate_only)}, "
+                            f"so their social is the regional or corporate feed.")
+        floors = sorted({f"{x['competitor']} {x['platform']}" for x in social
+                         if x["count_is_floor"]})
+        if floors:
+            coverage.append(f"Post counts are a floor for {', '.join(floors)}.")
     single = sorted(c["name"] for c in competitors if c.get("single_market"))
     if single:
         coverage.append(f"{', '.join(single)} operate only in this market, so all of their "
@@ -319,6 +375,7 @@ def build_digest(
         "not_surfaced": quiet,
         "paid": paid,
         "search": search,
+        "social": social,
         "other_signals": other,
         "signal_counts": counts,
         "coverage": coverage,
@@ -374,6 +431,11 @@ How to read the digest:
 - accuracy "directional" figures are estimates. Say so wherever one appears.
 - recruitment_ads are hiring, not acquisition. They are not competitive pressure.
 - Keyword search volumes, if quoted, are the DC figures in the digest or none at all.
+- social: account_scope "local" is a location account and its posts are ground-level
+  DC content. "regional" and "national" are the DMV or corporate feed; only their posts
+  whose geo_relevance names DC are local. Never describe a corporate feed as the
+  competitor's DC activity. count_is_floor true means say "at least N posts".
+- followers null means unknown, never zero.
 
 The digest's pressure section is computed by code and is final. Do not re-score it.
 It is CALIBRATED: 50 is a normal week for these competitors, 65 is about one usual
@@ -678,13 +740,23 @@ def load(sb: Supa, slug: str, wk: date) -> dict[str, Any]:
     snapshots = sb.get("portal", "signals", {
         "client_id": f"eq.{cid}", "week_of": f"eq.{wk.isoformat()}",
         "signal_type": "eq.page_snapshot", "select": "id", "limit": "1"})
-    ran = {"email"}  # the inbound webhook runs continuously
+    # Email "ran" for a week only if the portal inbox was already receiving before the
+    # week the briefing covers began: week W reads email sent in [W-7, W) (see
+    # week_window.py). Before the webhook existed, no email is unknown, not zero, and a
+    # zero there would sit in every competitor's median for a quarter.
+    first_mail = sb.get("portal", "inbound_emails", {
+        "select": "received_at", "order": "received_at.asc", "limit": "1"})
+    ran = set()
+    if first_mail and str(first_mail[0]["received_at"])[:10] <= (wk - timedelta(days=7)).isoformat():
+        ran.add("email")
     if rollups:
         ran.add("ads")
     if snapshots:
         ran.add("web")
     if any(s["signal_type"] == "tracked_keyword_positions" for s in signals):
         ran.add("search")
+    if any(s["signal_type"] == "social_profile" for s in signals):
+        ran.add("social")
     return {
         "client": client, "competitors": competitors, "rollups": rollups,
         "prior_rollups": prior_rollups, "signals": signals,
@@ -725,6 +797,9 @@ def main() -> int:
     ap.add_argument("--digest-only", action="store_true",
                     help="build and print the digest, call no model, write nothing")
     ap.add_argument("--dry-run", action="store_true", help="call the model, write nothing")
+    ap.add_argument("--backfill-pressure", type=int, default=0, metavar="N",
+                    help="before this week, compute and store pressure history for the N "
+                         "previous weeks from whatever signals they hold (no briefings)")
     args = ap.parse_args()
 
     url, key = os.environ.get("SUPABASE_URL"), os.environ.get("SUPABASE_SERVICE_KEY")
@@ -733,11 +808,26 @@ def main() -> int:
         return 2
     sb = Supa(url, key)
     wk = parse_week(args.week)
+    if args.backfill_pressure:
+        for i in range(args.backfill_pressure, 0, -1):   # oldest first: each week's
+            w = wk - timedelta(weeks=i)                   # history includes the last
+            bctx = load(sb, args.client, w)
+            if not bctx["signals"]:
+                print(f"[synth] backfill {w}: no signals, skipped")
+                continue
+            bp, _ = compute_pressure(bctx, w)
+            print(f"[synth] backfill {w}: ran={sorted(bctx['ran'])} market="
+                  f"{bp['market']['status']} {bp['market']['metrics']}")
+            if not (args.dry_run or args.digest_only):
+                sb.upsert("portal", "pressure_weekly",
+                          pressure_rows(bctx["client"]["id"], w, bp),
+                          on_conflict="client_id,competitor_id,week_of")
     ctx = load(sb, args.client, wk)
     client = ctx["client"]
 
     digest = build_digest(ctx["signals"], ctx["competitors"], ctx["rollups"],
-                          ctx["prior_rollups"], ctx["email_channels"], client["name"], wk)
+                          ctx["prior_rollups"], ctx["email_channels"], client["name"], wk,
+                          email_live="email" in ctx["ran"])
     print(f"[synth] {client['name']} · week of {wk} · profile={client.get('output_profile')}")
     print(f"[synth] signals: {json.dumps(digest['signal_counts'])}")
     print(f"[synth] ranked changes: {len(digest['ranked_changes'])} · "

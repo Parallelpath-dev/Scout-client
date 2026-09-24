@@ -140,6 +140,9 @@ def test_window():
     ids = {s["id"] for s in window()}
     assert "e1" in ids, "last week's email must be read: email is filed by send date"
     assert "w-old" not in ids, "last week's web change must not be re-read"
+    monday = sig("e-now", "email", "c-one", week="2026-09-21")
+    assert not in_window(monday, WK), "an email sent this Monday is next week's briefing"
+    assert in_window(sig("e-prev", "email", "c-one", week=PREV), WK)
     snap = sig("p", "page_snapshot", "c-mov")
     assert not in_window(snap, WK), "snapshots are memory, not evidence"
     loose = {"id": "x", "signal_type": "domain_overview", "week_of": None,

@@ -31,6 +31,10 @@ on:
         description: 'digest (no model, no write) | dry_run (model, no write) | live'
         required: false
         default: 'live'
+      backfill_pressure:
+        description: 'Store pressure history for this many earlier weeks first (0 = none)'
+        required: false
+        default: '0'
 
 env:
   SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
@@ -71,4 +75,7 @@ jobs:
             digest)  ARGS="$ARGS --digest-only" ;;
             dry_run) ARGS="$ARGS --dry-run" ;;
           esac
+          if [ "${{ github.event.inputs.backfill_pressure || '0' }}" != "0" ]; then
+            ARGS="$ARGS --backfill-pressure ${{ github.event.inputs.backfill_pressure }}"
+          fi
           cd pipeline && python3 synthesizer.py $ARGS

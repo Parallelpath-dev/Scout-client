@@ -16,10 +16,14 @@ THREE STEPS
        web            surfaced page changes, material 3 / minor 1
        email          emails, material 3 / other 1       (confirmations excluded)
        search         visibility on the DC-tracked keywords, sum of (21 - position)
+       social_posts   organic posts published in the week
 
    Geo weight: 1.0 when the content names DC or lands on a DC page, or the brand
    operates only in this market; 0.5 regional; 0.25 no geography; 0 another market.
    A web change that may not apply here (applies_locally unknown) counts half.
+   A social post counts in full from a location account (channel scope local), and
+   otherwise by what it says, like an ad: the regional DMV feed and the corporate feed
+   count only when the post names DC.
 
 2. CALIBRATE each metric against that competitor's own last 12 weeks (calibrate.py),
    and combine the metric z-scores by channel weight. A big advertiser having a normal
@@ -58,6 +62,7 @@ QUIET_EMAIL = {"confirmation", "transactional"}
 # tool (social 30, owned 25, paid 20, search 15, news 10); social and news have no
 # collector yet, so their weight is shared out over the metrics that exist.
 METRIC_WEIGHT = {
+    "social_posts": 30,
     "ads_active": 10, "ads_launched": 10,
     "web": 12.5, "email": 12.5,
     "search": 15,
@@ -69,6 +74,7 @@ FLOORS = {
     "web": dict(abs_floor=1.0),
     "email": dict(abs_floor=1.0, rel_floor=0.25),
     "search": dict(abs_floor=3.0, rel_floor=0.10),
+    "social_posts": dict(abs_floor=1.0, rel_floor=0.25),
 }
 
 EVENT_POINTS = {"watch_term": 20, "location": 15, "price": 10, "offer": 10}
@@ -165,6 +171,16 @@ def week_metrics(
             if kind == "opening":
                 event(cid, "location", s, d.get("subject") or "opening email")
 
+        elif t == "social_post":
+            if sm or s.get("source_scope") == "local":
+                w = 1.0
+            else:
+                w = max(GEO_WEIGHT.get(s.get("geo_relevance") or "none", 0.25),
+                        0.5 if s.get("source_scope") == "regional" else 0.25)
+                if s.get("geo_relevance") == "other_market":
+                    w = 0.0
+            add(cid, "social_posts", w)
+
         elif t == "tracked_keyword_positions":
             vis = 0.0
             for kw in d.get("keywords") or []:
@@ -178,6 +194,7 @@ def week_metrics(
         if terms:
             hay = " ".join(str(x) for x in (
                 s.get("geo_evidence"), d.get("subject"), d.get("body"), d.get("title"),
+                d.get("text") if t == "social_post" else None,
                 " ".join(d.get("evidence") or []) if isinstance(d.get("evidence"), list) else "",
             ) if x).lower()
             hit = next((t2 for t2 in terms if t2 in hay), None)
@@ -198,6 +215,9 @@ def week_metrics(
             m.setdefault("email", 0.0)
         if "search" in ran and "tracked_keyword_positions" in seen_types[cid]:
             m.setdefault("search", 0.0)
+        # A social profile row is the collector's proof it reached this competitor.
+        if "social" in ran and "social_profile" in seen_types[cid]:
+            m.setdefault("social_posts", 0.0)
     return out
 
 
