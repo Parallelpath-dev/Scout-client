@@ -99,13 +99,14 @@ def build_rows(
     """
     since, until = sp.window(wk)
     run_since = sp.window(run_until or wk, run_weeks)[0]
-    limit = sp.limit_for(run_weeks)
+
     comp = {c["id"]: c for c in competitors}
     now = datetime.now(timezone.utc).isoformat()
     post_rows, profile_rows = [], []
 
     for ch in collected:
         c = comp.get(ch.competitor_id, {})
+        limit = sp.limit_for(run_weeks, ch.platform)
         allp = posts_by_channel.get(ch.id, [])
         oldest = min((p.posted_at for p in allp), default=None)
         hit_limit = returned.get(ch.id, 0) >= limit and oldest is not None and oldest >= run_since
@@ -209,7 +210,14 @@ def collect(token: str, channels: list[sp.Channel], wk, weeks: int = 1) -> tuple
             continue
         norm = sp.NORMALIZE[platform]
         unmatched = 0
+        failed: dict[str, str] = {}
         for it in items:
+            err = sp.item_error(it)
+            if err:
+                ch = sp.match_error(it, chans)
+                if ch:
+                    failed[ch.id] = err
+                continue
             p = norm(it)
             if not p:
                 continue
@@ -221,12 +229,18 @@ def collect(token: str, channels: list[sp.Channel], wk, weeks: int = 1) -> tuple
             returned[ch.id] += 1
         if unmatched:
             print(f"  {unmatched} {platform} item(s) matched no channel and were dropped")
-        collected.extend(chans)
+        for c in chans:
+            if c.id in failed and not posts.get(c.id):
+                print(f"  NOT READABLE {platform} {c.handle}: {failed[c.id]}. "
+                      f"No profile row: this channel reads as unknown, never as zero.")
+        collected.extend(c for c in chans if not (c.id in failed and not posts.get(c.id)))
 
         if platform == "instagram":
+            readable = [c for c in chans if c.id not in failed]
             try:
-                det = apify.run_actor(token, sp.ACTORS[platform], sp.details_payload(chans))
-                followers.update(sp.followers_from_details(det, chans))
+                det = apify.run_actor(token, sp.ACTORS[platform],
+                                      sp.details_payload(readable)) if readable else []
+                followers.update(sp.followers_from_details(det, readable))
             except Exception as e:  # noqa: BLE001 — followers are context, not the count
                 print(f"  WARNING instagram details failed ({e}); followers unknown")
     return posts, collected, followers, returned
