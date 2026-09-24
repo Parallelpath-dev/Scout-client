@@ -47,10 +47,20 @@ revoke all on portal.pressure_weekly from anon;
 
 -- Watch terms: names whose appearance in any competitor signal is a step-change event
 -- worth fixed points (momentum.EVENT_POINTS["watch_term"]). Config, not code.
+--
+-- never_in_writing: terms that hold a briefing if they appear in anything client-
+-- readable (validate_briefing.py). The client brain says the Columbia Heights /
+-- Eckington overlap is raised on a call and never in writing. A pattern for
+-- "cannibalise" misses "draw members away from Eckington", so the name itself is
+-- the rule: a competitive briefing has no need to mention the client's own gym.
 update public.clients
    set config = coalesce(config, '{}'::jsonb)
-              || jsonb_build_object('watch_terms',
-                   jsonb_build_array('columbia heights', 'dc usa', '14th st nw', '3100 14th'))
+              || jsonb_build_object(
+                   'watch_terms',
+                   jsonb_build_array('columbia heights', 'dc usa', '14th st nw', '3100 14th'),
+                   'never_in_writing',
+                   jsonb_build_array('eckington'))
  where slug = 'bouldering-project';
 
-select slug, config->'watch_terms' from public.clients where slug = 'bouldering-project';
+select slug, config->'watch_terms', config->'never_in_writing'
+  from public.clients where slug = 'bouldering-project';

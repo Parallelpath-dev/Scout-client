@@ -167,6 +167,31 @@ def test_driver_is_furthest_above_their_own_normal():
     assert p["market"]["status"] == "calibrating", "no market history yet"
 
 
+def test_other_market_is_not_pressure():
+    s = [{"id": "e", "signal_type": "email", "competitor_id": "nat", "geo_relevance": "other_market",
+          "data": {"email_type": "opening", "materiality": "material", "subject": "Now open in Denver"}}]
+    m = metrics(s)
+    assert m["nat"]["metrics"]["email"] == 0.0 and m["nat"]["events"] == []
+
+
+def test_new_metric_does_not_fake_a_trend():
+    hist = [{"ads_active": 10.0, "ads_launched": 2.0}] * 7 + \
+           [{"ads_active": 10.0, "ads_launched": 2.0, "email": 3.0}] * 5
+    r = mo.score_row({"ads_active": 10.0, "ads_launched": 2.0, "email": 3.0}, hist, [])
+    assert r["score"] == 50 and r["trend"] != "hotter", r
+
+
+def test_partial_social_collection_is_unknown():
+    s = [{"id": "p", "signal_type": "social_profile", "competitor_id": "big", "channel_id": "fb",
+          "source_scope": "local", "geo_relevance": "none", "data": {}}]
+    both = {"big": {"fb", "ig"}}
+    assert "social_posts" not in mo.week_metrics(
+        s, COMPS, WK, ran={"social"}, email_channels=set(), social_channels=both)["big"]["metrics"]
+    assert mo.week_metrics(
+        s, COMPS, WK, ran={"social"}, email_channels=set(),
+        social_channels={"big": {"fb"}})["big"]["metrics"]["social_posts"] == 0.0
+
+
 def main() -> int:
     tests = [v for k, v in sorted(globals().items()) if k.startswith("test_")]
     failed = 0

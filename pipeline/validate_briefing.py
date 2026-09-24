@@ -141,10 +141,22 @@ def check_text(rep, where, text, cap, never=()):
             rep.warn(where, f"adverb: {a!r}")
 
 
+def terms_to_patterns(terms):
+    """Client config never_in_writing terms (plain strings) to patterns."""
+    return [re.compile(rf"\b{re.escape(t)}\b", re.I) for t in (terms or []) if t]
+
+
 def validate(briefing, week_signal_ids, profile="executive", never_in_writing=()):
-    """Validate one briefing. week_signal_ids = every signal id collected that week."""
+    """Validate one briefing. week_signal_ids = every signal id collected that week.
+
+    briefing may carry "sections" (full_report.sections): every string in them is
+    client-readable through the API whether or not a tab renders it yet, so it gets the
+    same writing rules and the same evidence rule as a development.
+    """
     rep = Report()
     nv = tuple(never_in_writing)
+    _check_sections(rep, briefing.get("sections") if isinstance(briefing, dict) else None,
+                    week_signal_ids, nv, profile)
 
     if not isinstance(briefing, dict):
         rep.fail("briefing", "not a JSON object — synthesis or parsing failed")
@@ -153,7 +165,14 @@ def validate(briefing, week_signal_ids, profile="executive", never_in_writing=()
     if profile != "executive":
         # Operator briefings still get the writing rules and the evidence rules,
         # but no caps and no development ceiling.
+        big = 10 ** 6
+        if briefing.get(F_SUMMARY):
+            check_text(rep, "summary", briefing.get(F_SUMMARY), big, nv)
         for i, dev in enumerate(briefing.get(F_DEVELOPMENTS) or []):
+            if isinstance(dev, dict):
+                for k, v in dev.items():
+                    if k not in (F_SIGNALS, F_CONFIDENCE, F_SOURCE) and isinstance(v, str) and v.strip():
+                        check_text(rep, f"dev[{i}].{k}", v, big, nv)
             _check_evidence(rep, f"dev[{i}]", dev, week_signal_ids, suppress_low=False)
         return rep
 
@@ -219,10 +238,45 @@ def _check_evidence(rep, where, dev, week_signal_ids, suppress_low):
     if suppress_low and conf == "low":
         rep.fail(where, "low confidence in an executive briefing — suppress it rather "
                         "than compressing it into a confident headline")
-    if suppress_low and len(ids) < 2 and conf != "high":
-        rep.fail(where, "single-signal development below high confidence — omit it")
+    if suppress_low and len(set(ids)) < 2:
+        # The executive rule is unconditional: one signal is omitted, however confident
+        # the model says it is. A model's "high" is not evidence.
+        rep.fail(where, "rests on a single signal — omit it")
     if not dev.get(F_SOURCE):
         rep.warn(where, "no source_url — every item should be checkable in one click")
+
+
+SECTION_SKIP = {F_SIGNALS, "applies_locally", "format", "keyword", "competitor"}
+
+
+def _check_sections(rep, sections, week_signal_ids, nv, profile):
+    if not isinstance(sections, dict):
+        return
+    cap = CAPS["_default"] if profile == "executive" else 10 ** 6
+    for tab, keys in sections.items():
+        if not isinstance(keys, dict):
+            continue
+        for key, items in keys.items():
+            for j, item in enumerate(items or []):
+                where = f"sections.{tab}.{key}[{j}]"
+                if not isinstance(item, dict):
+                    rep.fail(where, "not an object")
+                    continue
+                for k, v in item.items():
+                    if k not in SECTION_SKIP and isinstance(v, str) and v.strip():
+                        check_text(rep, f"{where}.{k}", v, cap, nv)
+                    elif k in ("competitor", "keyword") and isinstance(v, str):
+                        for rx in nv:
+                            if rx.search(v):
+                                rep.fail(f"{where}.{k}", f"topic kept out of writing: {rx.pattern!r}")
+                ids = item.get(F_SIGNALS)
+                if not isinstance(ids, list) or not ids:
+                    rep.fail(where, "cites no signals — every claim must trace to collected data")
+                elif week_signal_ids is not None:
+                    unknown = [x for x in ids if x not in week_signal_ids]
+                    if unknown:
+                        rep.fail(where, f"cites {len(unknown)} signal id(s) not collected this "
+                                        f"week — possible fabrication: {unknown[:3]}")
 
 
 # ── Supabase path ────────────────────────────────────────────────────────────
@@ -234,7 +288,7 @@ def run_for_client(slug, week=None, dry_run=False):
     from week_window import fetch_week_signals, week_of
 
     sb = Supa(os.environ["SUPABASE_URL"], os.environ["SUPABASE_SERVICE_KEY"])
-    c = sb.get("public", "clients", {"slug": f"eq.{slug}", "select": "id,name,output_profile"})
+    c = sb.get("public", "clients", {"slug": f"eq.{slug}", "select": "id,name,output_profile,config"})
     if not c:
         print(f"[validate] no client with slug {slug}")
         return 2
@@ -242,7 +296,7 @@ def run_for_client(slug, week=None, dry_run=False):
     profile = client.get("output_profile") or "operator"
 
     params = {"client_id": f"eq.{client['id']}",
-              "select": "id,week_of,summary,developments,published_at",
+              "select": "id,week_of,summary,developments,full_report,published_at",
               "order": "week_of.desc", "limit": "1"}
     if week:
         params["week_of"] = f"eq.{week}"
@@ -254,13 +308,15 @@ def run_for_client(slug, week=None, dry_run=False):
 
     # The columns are the source of truth. full_report is jsonb in this schema and
     # holds the sections, not a second copy of what the client reads.
-    briefing = {"summary": row.get("summary"), "developments": row.get("developments") or []}
+    briefing = {"summary": row.get("summary"), "developments": row.get("developments") or [],
+                "sections": (row.get("full_report") or {}).get("sections")}
 
     from datetime import date as _date
     wk = week_of(_date.fromisoformat(str(row["week_of"])[:10]))
     week_ids = {s["id"] for s in fetch_week_signals(sb, client["id"], wk, select="id,signal_type,week_of,collected_at")}
 
-    rep = validate(briefing, week_ids, profile, never_in_writing=NEVER_IN_WRITING)
+    nv = NEVER_IN_WRITING + terms_to_patterns((client.get("config") or {}).get("never_in_writing"))
+    rep = validate(briefing, week_ids, profile, never_in_writing=nv)
     print(f"[validate] {client['name']} · week of {row['week_of']} · profile={profile}")
     print(rep.render())
 

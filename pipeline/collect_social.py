@@ -192,11 +192,20 @@ def collect(token: str, channels: list[sp.Channel], wk, weeks: int = 1) -> tuple
 
     for platform, chans in sorted(by_platform.items()):
         print(f"\n  {platform}: {len(chans)} channel(s)")
-        try:
-            items = apify.run_actor(token, sp.ACTORS[platform],
-                                    sp.payload(platform, chans, wk, weeks))
-        except Exception as e:  # noqa: BLE001 — one platform's failure is not the run's
-            print(f"  ERROR {platform}: {e}. These channels read as unknown this week.")
+        # X's maxItems is one budget for the whole run, so one busy handle could starve
+        # the rest into a false zero. One run per handle there; one per platform elsewhere.
+        groups = [[c] for c in chans] if platform == "x" else [chans]
+        items, ok = [], []
+        for g in groups:
+            try:
+                items += apify.run_actor(token, sp.ACTORS[platform],
+                                         sp.payload(platform, g, wk, weeks))
+                ok += g
+            except Exception as e:  # noqa: BLE001 — one platform's failure is not the run's
+                print(f"  ERROR {platform} {[c.handle for c in g]}: {e}. "
+                      f"These channels read as unknown this week.")
+        chans = ok
+        if not chans:
             continue
         norm = sp.NORMALIZE[platform]
         unmatched = 0

@@ -65,7 +65,8 @@ SIGNALS = [
         "display_format": "DCO", "start_date": "2026-01-02"}),
     sig("a3", "ad_active", "c-one", data={"body": "We're hiring trainers", "is_recruitment": True,
                                           "start_date": "2026-09-19"}),
-    sig("a4", "ad_active", "c-vida", data={"body": "Summer at VIDA", "start_date": "2026-06-01"}),
+    sig("a4", "ad_active", "c-vida", data={"body": "Fall classes at VIDA", "start_date": "2026-09-19"}),
+    sig("a5", "ad_active", "c-mov", data={"body": "Memberships from $109", "start_date": "2026-09-18"}),
     # Search, with the directional caveat on the row.
     sig("s1", "domain_overview", "c-one", week="2026-09-21", data={
         "paid_keywords": 36, "accuracy": "directional",
@@ -78,6 +79,8 @@ ROLLUPS = [
     {"competitor_id": "c-one", "total_available": 266, "ads_sampled": 266, "sample_method": "census",
      "dc_landing": 0, "dc_explicit": 3, "regional": 10, "other_market": 16},
     {"competitor_id": "c-vida", "total_available": 21, "ads_sampled": 21, "sample_method": "census",
+     "dc_landing": 0, "dc_explicit": 0, "regional": 0, "other_market": 0},
+    {"competitor_id": "c-mov", "total_available": 66, "ads_sampled": 66, "sample_method": "census",
      "dc_landing": 0, "dc_explicit": 0, "regional": 0, "other_market": 0},
 ]
 PRIOR = [{"competitor_id": "c-one", "total_available": 250, "dc_landing": 0, "dc_explicit": 1}]
@@ -102,7 +105,7 @@ GOOD_ANALYSIS = {
         # Deliberately returned in the WRONG order: code must reorder on collector rank.
         {"competitor": "VIDA", "headline": "VIDA added a new class at U Street",
          "so_what": "Adds programming on your corridor.", "observed": "One schedule change.",
-         "confidence": "high", "signal_ids": ["w2"]},
+         "confidence": "high", "signal_ids": ["w2", "a4"]},
         {"competitor": "Onelife", "headline": "Onelife waived enrollment for new members",
          "so_what": "Removes the joining cost for price-sensitive prospects.",
          "observed": "A $0 enrollment email and a Tenleytown ad.",
@@ -110,7 +113,7 @@ GOOD_ANALYSIS = {
         {"competitor": "Movement", "headline": "Movement dropped its national membership price",
          "so_what": "Narrows the gap to your $124 list price.",
          "observed": "Memberships page moved from $116 to $109.",
-         "confidence": "high", "signal_ids": ["w1", "w1"]},
+         "confidence": "high", "signal_ids": ["w1", "a5"]},
     ],
     "sections": {"paid": {"spend_signals": [{"competitor": "Onelife", "observation": "266 ads.",
                                              "signal_ids": ["a1"]}], "junk": [1]},
@@ -259,6 +262,49 @@ def test_ceiling_cuts_count_not_words():
     assert len(row["developments"]) == 4
     assert [x["competitor"] for x in row["developments"]][2] == "VIDA", \
         "ranked developments come before unranked ones"
+
+
+def test_single_signal_is_suppressed_not_held():
+    one = json.loads(json.dumps(GOOD_ANALYSIS))
+    one["developments"][0]["signal_ids"] = ["w2", "w2"]   # duplicates are one signal
+    model, _ = fake_model(one, GOOD_STRATEGY)
+    row, rep = sy.synthesize(client=CLIENT, digest=digest(), signals=window(), prior_score=None,
+                             pressure=pressure(), model=model)
+    assert rep.ok, rep.render()
+    assert "VIDA" not in [d["competitor"] for d in row["developments"]]
+    assert any("suppressed" in w for w in row["full_report"]["validation"]["warnings"])
+
+
+def test_sections_are_gated():
+    bad = json.loads(json.dumps(GOOD_ANALYSIS))
+    bad["sections"]["owned"] = {"website_changes": [
+        {"competitor": "Movement", "observation": "Price cut \u2014 big news.",
+         "signal_ids": ["invented"]}]}
+    model, _ = fake_model(bad, GOOD_STRATEGY)
+    _, rep = sy.synthesize(client=CLIENT, digest=digest(), signals=window(), prior_score=None,
+                           pressure=pressure(), model=model)
+    assert any("sections.owned" in f and "em dash" in f for f in rep.failures)
+    assert any("sections.owned" in f and "not collected" in f for f in rep.failures)
+
+
+def test_source_url_is_never_the_models():
+    a = json.loads(json.dumps(GOOD_ANALYSIS))
+    a["developments"][2]["source_url"] = "https://movementgyms.com/made-up"
+    model, _ = fake_model(a, GOOD_STRATEGY)
+    row, _ = sy.synthesize(client=CLIENT, digest=digest(), signals=window(), prior_score=None,
+                           pressure=pressure(), model=model)
+    mov = next(d for d in row["developments"] if d["competitor"] == "Movement")
+    assert mov["source_url"] == "https://example.com/w1"
+
+
+def test_client_never_in_writing_terms():
+    leak = json.loads(json.dumps(GOOD_STRATEGY))
+    leak["recommendations"][0]["recommendation"] = "Draw members away from Eckington early."
+    model, _ = fake_model(GOOD_ANALYSIS, leak)
+    c = dict(CLIENT, config={"never_in_writing": ["eckington"]})
+    _, rep = sy.synthesize(client=c, digest=digest(), signals=window(), prior_score=None,
+                           pressure=pressure(), model=model)
+    assert not rep.ok and any("eckington" in f for f in rep.failures)
 
 
 def test_extract_json():

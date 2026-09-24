@@ -105,6 +105,7 @@ def geo_weight(signal: dict[str, Any], single_market: bool) -> float:
 def week_metrics(
     signals: list[dict[str, Any]], competitors: list[dict[str, Any]], wk: date,
     *, ran: set[str], email_channels: set[str], watch_terms: list[str] | None = None,
+    social_channels: dict[str, set[str]] | None = None,
 ) -> dict[str, dict[str, Any]]:
     """{competitor_id: {"metrics": {...}, "events": [...]}} for one week.
 
@@ -112,6 +113,10 @@ def week_metrics(
     in rather than inferred, because a collector that ran and found nothing leaves no
     signal behind: the web collector's proof of life is its page snapshots, which are
     not evidence and are not in the window.
+
+    social_channels: {competitor_id: {organic channel ids}}. social_posts is only
+    recorded when every one of a competitor's channels was collected; with one
+    platform's actor down, a partial count would read as a real drop.
 
     Only competitors appear; the client's own search rows are not pressure.
     """
@@ -137,6 +142,9 @@ def week_metrics(
         d = s.get("data") or {}
         seen_types[cid].add(t)
         sm = bool(comp[cid].get("single_market"))
+        # Content about another market is not pressure here, and neither is an event
+        # in it: "now open in Denver" must not make Movement this week's driver.
+        elsewhere = s.get("geo_relevance") == "other_market" and not sm
 
         if t == "ad_active":
             if d.get("is_recruitment"):
@@ -151,8 +159,9 @@ def week_metrics(
             if not d.get("surfaces"):
                 continue
             pts = MATERIALITY_POINTS.get(d.get("materiality"), 0.0)
-            add(cid, "web", pts * APPLIES_WEIGHT.get(d.get("applies_locally") or "yes", 1.0))
-            types = set(d.get("change_types") or [])
+            add(cid, "web", 0.0 if elsewhere else
+                pts * APPLIES_WEIGHT.get(d.get("applies_locally") or "yes", 1.0))
+            types = set() if elsewhere else set(d.get("change_types") or [])
             if "price" in types:
                 event(cid, "price", s, "; ".join(d.get("evidence") or [])[:160])
             if "offer" in types:
@@ -165,10 +174,11 @@ def week_metrics(
             if kind in QUIET_EMAIL:
                 continue
             w = 1.0 if sm or s.get("geo_relevance") in ("dc_landing", "dc_explicit") else 0.5
-            add(cid, "email", MATERIALITY_POINTS.get(d.get("materiality"), 1.0) * w)
-            if kind == "offer":
+            add(cid, "email", 0.0 if elsewhere else
+                MATERIALITY_POINTS.get(d.get("materiality"), 1.0) * w)
+            if not elsewhere and kind == "offer":
                 event(cid, "offer", s, d.get("subject") or "offer email")
-            if kind == "opening":
+            if not elsewhere and kind == "opening":
                 event(cid, "location", s, d.get("subject") or "opening email")
 
         elif t == "social_post":
@@ -215,9 +225,15 @@ def week_metrics(
             m.setdefault("email", 0.0)
         if "search" in ran and "tracked_keyword_positions" in seen_types[cid]:
             m.setdefault("search", 0.0)
-        # A social profile row is the collector's proof it reached this competitor.
+        # A social profile row is the collector's proof it reached a channel. All of a
+        # competitor's channels, or the metric is unknown this week.
         if "social" in ran and "social_profile" in seen_types[cid]:
             m.setdefault("social_posts", 0.0)
+        if social_channels is not None and "social_posts" in m:
+            got = {s.get("channel_id") for s in signals
+                   if s.get("competitor_id") == cid and s["signal_type"] == "social_profile"}
+            if not social_channels.get(cid, set()) <= got:
+                m.pop("social_posts")
     return out
 
 
@@ -248,9 +264,12 @@ def score_row(
                 "event_points": bonus, "trend": None, "history_weeks": len(history)}
     z = sum(zs[k] * w for k, w in live.items()) / sum(live.values())
     # Trend on the combined level, so it survives the ramp being absorbed as normal.
+    # Only over weeks that carry every metric in the score: a metric that started being
+    # collected recently would otherwise read as the market heating up.
     def level(m: dict[str, float]) -> float:
-        return sum(m.get(k, 0.0) * METRIC_WEIGHT.get(k, 10) for k in live)
-    tr = trend([level(h) for h in history] + [level(metrics)])
+        return sum(m[k] * METRIC_WEIGHT.get(k, 10) for k in live)
+    complete = [h for h in history if all(h.get(k) is not None for k in live)]
+    tr = trend([level(h) for h in complete] + [level(metrics)])
     return {"status": "scored", "score": to_score(z, bonus), "z": round(z, 3),
             "metric_z": {k: (round(v, 3) if v is not None else None) for k, v in zs.items()},
             "event_points": bonus, "trend": tr, "history_weeks": len(history)}

@@ -67,7 +67,6 @@ jobs:
           python3 test_geo.py
           python3 test_web_change.py
           python3 test_email_classify.py
-          python3 test_social.py
 
       - name: Collect and classify Meta ads
         run: |
@@ -98,8 +97,15 @@ jobs:
       # one run. Posts published in the seven days before the briefing week, filed under
       # the briefing week. A platform whose actor fails writes nothing and its channels
       # read as unknown, never as zero.
-      - name: Collect organic social
+      # Its own test step, so a broken social fixture stops the social collector and
+      # nothing else. Folded into the step above, it would have skipped the week's ads.
+      - name: Test the social collector
+        id: social_tests
         if: always()
+        run: cd pipeline && python3 test_social.py
+
+      - name: Collect organic social
+        if: ${{ !cancelled() && steps.social_tests.outcome == 'success' }}
         run: |
           ARGS="--client ${{ github.event.inputs.client_slug || 'bouldering-project' }}"
           if [ -n "${{ github.event.inputs.week }}" ]; then

@@ -524,19 +524,28 @@ def anthropic_model(system: str, user: str, max_tokens: int, temperature: float)
     return "".join(b.text for b in resp.content if getattr(b, "type", "") == "text")
 
 
-def run_analyst(model: ModelFn, digest: dict[str, Any], profile: str) -> dict[str, Any]:
+def _never_block(terms: list[str]) -> str:
+    if not terms:
+        return ""
+    return ("\n\nNever write any of these words, in any field, for any reason: "
+            + ", ".join(f'"{t}"' for t in terms)
+            + ". A briefing that contains one is held and the client receives nothing.")
+
+
+def run_analyst(model: ModelFn, digest: dict[str, Any], profile: str,
+                never: list[str] | None = None) -> dict[str, Any]:
     user = (
         f"Client: {digest['client']}. Week of {digest['week_of']}.\n\n"
         f"## DIGEST\n{json.dumps(digest, indent=1, default=str)}\n\n"
         f"## SCHEMA\n{ANALYST_SCHEMA}"
     )
-    return extract_json(model(ANALYST_SYSTEM + profile_block(profile, "analyst"),
-                              user, 10000, 0.1))
+    return extract_json(model(ANALYST_SYSTEM + profile_block(profile, "analyst")
+                              + _never_block(never or []), user, 10000, 0.1))
 
 
 def run_strategist(
     model: ModelFn, devs: list[dict[str, Any]], brain: str, coverage: list[str],
-    client_name: str, profile: str,
+    client_name: str, profile: str, never: list[str] | None = None,
 ) -> dict[int, str]:
     if not devs:
         return {}
@@ -549,8 +558,8 @@ def run_strategist(
         f"## WHAT WE COULD NOT SEE\n{json.dumps(coverage)}\n\n"
         f"## SCHEMA\n{STRATEGIST_SCHEMA}"
     )
-    out = extract_json(model(STRATEGIST_SYSTEM + profile_block(profile, "strategist"),
-                             user, 8000, 0.3))
+    out = extract_json(model(STRATEGIST_SYSTEM + profile_block(profile, "strategist")
+                             + _never_block(never or []), user, 8000, 0.3))
     recs = {}
     for r in out.get("recommendations") or []:
         if isinstance(r, dict) and isinstance(r.get("index"), int) and r.get("recommendation"):
@@ -583,11 +592,13 @@ def order_developments(
 def enrich(dev: dict[str, Any], signals_by_id: dict[str, dict[str, Any]]) -> dict[str, Any]:
     """Attach what code knows better than the model: the link and the caveat."""
     cited = [signals_by_id[x] for x in (dev.get("signal_ids") or []) if x in signals_by_id]
-    if not dev.get("source_url"):
-        for s in cited:
-            if s.get("source_url"):
-                dev["source_url"] = s["source_url"]
-                break
+    # Always from a cited signal, never the model's: a plausible invented URL is the
+    # worst kind of source link, because it looks checkable.
+    dev.pop("source_url", None)
+    for s in cited:
+        if s.get("source_url"):
+            dev["source_url"] = s["source_url"]
+            break
     for s in cited:
         d = s.get("data") or {}
         if d.get("applies_locally") == "unknown":
@@ -634,13 +645,24 @@ def synthesize(
     lo, hi = DEV_RANGE.get(profile, DEV_RANGE["operator"])
     by_id = {s["id"]: s for s in signals}
 
+    never_terms = list((client.get("config") or {}).get("never_in_writing") or [])
     digest = dict(digest, pressure=pressure_for_digest(pressure))
-    analysis = run_analyst(model, digest, profile)
-    devs = order_developments(analysis.get("developments") or [], by_id, hi)
+    analysis = run_analyst(model, digest, profile, never_terms)
+    raw_devs = [d for d in (analysis.get("developments") or []) if isinstance(d, dict)]
+    suppressed = []
+    if profile == "executive":
+        # One signal is omitted, not compressed into a confident headline. Dropping it
+        # here costs one development; leaving it for the gate would hold the week.
+        keep = []
+        for d in raw_devs:
+            ids = {x for x in (d.get("signal_ids") or []) if isinstance(x, str)}
+            (keep if len(ids) >= 2 else suppressed).append(d)
+        raw_devs = keep
+    devs = order_developments(raw_devs, by_id, hi)
     devs = [enrich(d, by_id) for d in devs]
 
     recs = run_strategist(model, devs, client.get("brain") or "", digest["coverage"],
-                          client["name"], profile)
+                          client["name"], profile, never_terms)
     for i, d in enumerate(devs):
         if i in recs:
             d["recommendation"] = recs[i]
@@ -675,12 +697,17 @@ def synthesize(
         },
     }
 
-    rep = vb.validate({"summary": summary, "developments": devs},
-                      digest_signal_ids(digest), profile,
-                      never_in_writing=vb.NEVER_IN_WRITING)
+    never = vb.NEVER_IN_WRITING + vb.terms_to_patterns(
+        (client.get("config") or {}).get("never_in_writing"))
+    sections = row["full_report"]["sections"]
+    rep = vb.validate({"summary": summary, "developments": devs, "sections": sections},
+                      digest_signal_ids(digest), profile, never_in_writing=never)
     row["full_report"]["validation"] = {
         "ok": rep.ok, "failures": rep.failures, "warnings": rep.warnings,
     }
+    for d in suppressed:
+        row["full_report"]["validation"]["warnings"].append(
+            f"suppressed single-signal development: {str(d.get('headline'))[:80]}")
     if len(devs) < lo:
         row["full_report"]["validation"]["warnings"].append(
             f"only {len(devs)} development(s); the summary must say the week was quiet")
@@ -720,6 +747,9 @@ def load(sb: Supa, slug: str, wk: date) -> dict[str, Any]:
     email_ch = sb.get("portal", "channels", {
         "competitor_id": f"in.({comp_ids})", "purpose": "eq.email", "active": "eq.true",
         "select": "competitor_id"})
+    social_ch = sb.get("portal", "channels", {
+        "competitor_id": f"in.({comp_ids})", "purpose": "eq.organic_social",
+        "active": "eq.true", "select": "id,competitor_id"})
     rollups = sb.get("portal", "ad_geo_weekly", {
         "client_id": f"eq.{cid}", "week_of": f"eq.{wk.isoformat()}", "select": "*"})
     prior_rollups = sb.get("portal", "ad_geo_weekly", {
@@ -745,6 +775,7 @@ def load(sb: Supa, slug: str, wk: date) -> dict[str, Any]:
     # week_window.py). Before the webhook existed, no email is unknown, not zero, and a
     # zero there would sit in every competitor's median for a quarter.
     first_mail = sb.get("portal", "inbound_emails", {
+        "client_id": f"eq.{cid}",
         "select": "received_at", "order": "received_at.asc", "limit": "1"})
     ran = set()
     if first_mail and str(first_mail[0]["received_at"])[:10] <= (wk - timedelta(days=7)).isoformat():
@@ -763,6 +794,8 @@ def load(sb: Supa, slug: str, wk: date) -> dict[str, Any]:
         "email_channels": {c["competitor_id"] for c in email_ch},
         "prior_score": prior[0]["pressure_score"] if prior else None,
         "history": history, "ran": ran,
+        "social_channels": {c: {x["id"] for x in social_ch if x["competitor_id"] == c}
+                            for c in {x["competitor_id"] for x in social_ch}},
         "watch_terms": ((client.get("config") or {}).get("watch_terms") or []),
     }
 
@@ -775,7 +808,8 @@ def mo_lookback() -> int:
 def compute_pressure(ctx: dict[str, Any], wk: date) -> tuple[dict[str, Any], dict]:
     per_comp = mo.week_metrics(ctx["signals"], ctx["competitors"], wk, ran=ctx["ran"],
                                email_channels=ctx["email_channels"],
-                               watch_terms=ctx["watch_terms"])
+                               watch_terms=ctx["watch_terms"],
+                               social_channels=ctx.get("social_channels"))
     return mo.score_week(per_comp, ctx["history"], ctx["competitors"]), per_comp
 
 
@@ -853,6 +887,17 @@ def main() -> int:
         print("[synth] no signals for this week. Writing nothing: an empty briefing is "
               "worse than last week's staying up.", file=sys.stderr)
         return 1
+    brain = (client.get("brain") or "").strip()
+    if len(brain) < 200 or brain.upper().startswith("AWAITING"):
+        print("[synth] client brain is missing or still the placeholder. The Strategist "
+              "reads it directly; refusing to write generic recommendations.", file=sys.stderr)
+        return 1
+
+    # History first, and before the model runs: a model failure must not leave a hole
+    # in every median, and a held week is still a week of competitor behaviour.
+    if not args.dry_run:
+        sb.upsert("portal", "pressure_weekly", pressure_rows(client["id"], wk, pressure),
+                  on_conflict="client_id,competitor_id,week_of")
 
     row, rep = synthesize(client=client, digest=digest, signals=ctx["signals"],
                           prior_score=ctx["prior_score"], pressure=pressure,
@@ -866,10 +911,6 @@ def main() -> int:
         print("[synth] dry run, nothing written")
         return 0 if rep.ok else 1
 
-    # History first, and whatever the gate decides: a held week is still a week of
-    # competitor behaviour, and skipping it would leave a hole in every median.
-    sb.upsert("portal", "pressure_weekly", pressure_rows(client["id"], wk, pressure),
-              on_conflict="client_id,competitor_id,week_of")
     sb.upsert("portal", "briefings", [row], on_conflict="client_id,week_of")
     if rep.ok:
         print(f"[synth] PUBLISHED week of {wk}")
