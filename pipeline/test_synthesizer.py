@@ -9,11 +9,13 @@ that returns canned JSON, so every rule the code owns is pinned here.
 from __future__ import annotations
 
 import json
+import re
 import sys
 from datetime import date
 
 import momentum as mo
 import synthesizer as sy
+import validate_briefing as vb
 from week_window import in_window
 
 WK = date(2026, 9, 21)
@@ -128,11 +130,18 @@ GOOD_STRATEGY = {"recommendations": [
 
 
 def fake_model(analysis, strategy):
+    """analysis may be a list: one answer per Analyst call, the last one repeating."""
     calls = []
+    answers = analysis if isinstance(analysis, list) else [analysis]
+    seen = {"analyst": 0}
 
     def m(system, user, max_tokens, temperature):
         calls.append(system)
-        return json.dumps(analysis if len(calls) == 1 else strategy)
+        if "Scout Analyst" in system:
+            a = answers[min(seen["analyst"], len(answers) - 1)]
+            seen["analyst"] += 1
+            return json.dumps(a)
+        return json.dumps(strategy)
 
     return m, calls
 
@@ -177,6 +186,26 @@ def test_paid_digest():
     a2 = sy.build_digest([s for s in window() if s["id"] == "a2"], COMPS,
                          [dict(ROLLUPS[0], regional=0)], [], set(), "BP", WK)
     assert "{{" not in json.dumps(a2)
+
+
+def test_launches_are_counted_in_messages():
+    # The 21 Sep briefing said "VIDA launched 28 new ads". It was 8 messages.
+    dup = [sig(f"v{i}", "ad_active", "c-vida", data={
+        "body": "Join VIDA today" if i < 20 else f"Message {i}", "start_date": "2026-09-19"})
+        for i in range(23)]
+    d = sy.build_digest(dup, COMPS, [ROLLUPS[1]], [], set(), "BP", WK)
+    v = d["paid"][0]
+    assert v["new_messages_since_last_week"] == 4
+    assert v["new_ad_ids_since_last_week_OVERCOUNTS"] == 23
+    assert len(v["new_ads"]) == 4 and v["new_ads"][0]["ad_ids_with_this_message"] == 20
+
+
+def test_search_caveat_stays_off_an_ad_story():
+    by = {x["id"]: x for x in window()}
+    ads = sy.enrich({"signal_ids": ["a1", "a2", "a5", "s1"]}, by)
+    assert "caveat" not in ads, "one Semrush row among ads is not a search story"
+    search = sy.enrich({"signal_ids": ["s1", "a1"]}, by)
+    assert "directional" in search["caveat"]
 
 
 def test_coverage():
@@ -301,6 +330,89 @@ def test_uncited_coverage_notes_are_dropped_not_held():
     assert rep.ok, rep.render()
     assert row["full_report"]["sections"]["owned"] == {"website_changes": [], "email_programs": []}
     assert sum("dropped uncited" in w for w in row["full_report"]["validation"]["warnings"]) == 2
+
+
+def test_model_sees_short_refs_and_they_map_back():
+    d = digest()
+    aliased, real = sy.alias_digest(d)
+    shown = sy.digest_signal_ids(aliased)
+    assert shown and all(re.fullmatch(r"s\d+", x) for x in shown), shown
+    assert set(real.values()) == sy.digest_signal_ids(d)
+    ref = next(iter(shown))
+    back = sy.unalias({"developments": [{"signal_ids": [ref, "s9999"]}]}, real)
+    assert back["developments"][0]["signal_ids"] == [real[ref], "s9999"], \
+        "a ref the model made up stays as written, so the gate fails it"
+
+
+def test_near_miss_is_repaired_once():
+    # The second live run: one word over a cap. The model gets the failure back.
+    long = json.loads(json.dumps(GOOD_ANALYSIS))
+    long["developments"][0]["so_what"] = " ".join(["word"] * 26)
+    model, calls = fake_model([long, GOOD_ANALYSIS], GOOD_STRATEGY)
+    row, rep = sy.synthesize(client=CLIENT, digest=digest(), signals=window(), prior_score=None,
+                             pressure=pressure(), model=model)
+    assert rep.ok, rep.render()
+    assert row["full_report"]["validation"]["attempts"] == 2
+    assert sum("Scout Analyst" in c for c in calls) == 2
+
+
+def test_repair_that_still_fails_is_held():
+    long = json.loads(json.dumps(GOOD_ANALYSIS))
+    long["developments"][0]["so_what"] = " ".join(["word"] * 26)
+    model, calls = fake_model(long, GOOD_STRATEGY)
+    row, rep = sy.synthesize(client=CLIENT, digest=digest(), signals=window(), prior_score=None,
+                             pressure=pressure(), model=model)
+    assert not rep.ok and row["full_report"]["validation"]["attempts"] == 2
+    assert sum("Scout Analyst" in c for c in calls) == 2, "exactly one repair, never a loop"
+
+
+def test_prompt_states_every_gate_rule():
+    g = sy.gate_rules("executive")
+    for x in vb.BANNED_PHRASES + vb.GENERIC_OPENERS:
+        assert x.strip() in g, x
+    for k in ("summary", "headline", "so_what", "recommendation"):
+        assert f"{k} {vb.CAPS[k]}" in g, k
+    assert "en dash" in g and "\"not\"" in g and "\"low\"" in g
+    # the examples the prompt holds up as right must themselves pass the gate
+    for good in ["Movement kept its price and added yoga", "Sept 17 to 21",
+                 "Movement opened a second Crystal City location"]:
+        r = vb.Report(); vb.check_text(r, "x", good, 40)
+        assert r.ok, (good, r.failures)
+    for bad in ["Movement did not change price but added yoga", "Sept 17\u201321"]:
+        r = vb.Report(); vb.check_text(r, "x", bad, 40)
+        assert not r.ok, bad
+    import executive_profile as ep
+    for role in ("analyst", "strategist"):
+        assert not re.search("[\u2014\u2013]", ep.profile_block("executive", role)), \
+            "the model imitates the prompt; the prompt carries no dashes"
+
+
+def test_low_confidence_is_suppressed_not_held():
+    a = json.loads(json.dumps(GOOD_ANALYSIS))
+    a["developments"][0]["confidence"] = "low"
+    model, _ = fake_model(a, GOOD_STRATEGY)
+    row, rep = sy.synthesize(client=CLIENT, digest=digest(), signals=window(), prior_score=None,
+                             pressure=pressure(), model=model)
+    assert rep.ok, rep.render()
+    assert all(d.get("confidence") != "low" for d in row["developments"])
+
+
+def test_long_recommendation_goes_back_to_the_strategist():
+    long = json.loads(json.dumps(GOOD_STRATEGY))
+    long["recommendations"][0]["recommendation"] = " ".join(["word"] * 31) + "."
+    users = []
+    answers = iter([long, GOOD_STRATEGY])
+
+    def m(system, user, max_tokens, temperature):
+        if "Scout Analyst" in system:
+            return json.dumps(GOOD_ANALYSIS)
+        users.append(user)
+        return json.dumps(next(answers))
+
+    row, rep = sy.synthesize(client=CLIENT, digest=digest(), signals=window(), prior_score=None,
+                             pressure=pressure(), model=m)
+    assert rep.ok, rep.render()
+    assert "FAILED REVIEW" in users[1] and "31 words" in users[1]
 
 
 def test_source_url_is_never_the_models():
