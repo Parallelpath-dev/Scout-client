@@ -218,6 +218,71 @@ main{overflow-y:auto}
   .step .d{max-width:none}
   .sec-h{flex-direction:column;gap:3px}
 }
+
+/* ── BRIEFING ─────────────────────────────────────────────────────────
+   Everything below renders portal.briefings as written by the pipeline.
+   The page adds no numbers of its own: every figure on screen is a field
+   in the row, so what the client reads is exactly what passed review. */
+.hero{display:grid;grid-template-columns:auto 1fr;gap:30px;align-items:center;
+  background:var(--surface);border:1px solid var(--line);border-left:3px solid var(--accent);
+  border-radius:var(--radius);padding:26px 30px;margin-bottom:30px}
+.hero .big{font-family:var(--font-display);font-size:64px;font-weight:800;line-height:1;
+  letter-spacing:-.04em}
+.hero .of{font-family:var(--font-mono);font-size:11px;color:var(--muted);margin-top:6px}
+.hero .word{font-family:var(--font-display);font-weight:600;font-size:17px;margin:6px 0 4px}
+.hero .cap{color:var(--muted);font-size:13.5px;max-width:58ch}
+.hero .drv{margin-top:10px;font-size:14px}
+.meters{display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:12px;margin-top:16px}
+.meter .l{font-family:var(--font-mono);font-size:10px;letter-spacing:.1em;text-transform:uppercase;
+  color:var(--muted);display:flex;justify-content:space-between}
+.meter .t{height:6px;border-radius:3px;background:var(--sunk);margin-top:6px;position:relative;overflow:hidden}
+.meter .f{position:absolute;left:0;top:0;bottom:0;border-radius:3px;background:var(--birch)}
+.meter .f.hi{background:var(--accent)}
+.meter .mid{position:absolute;left:50%;top:-2px;bottom:-2px;width:1px;background:var(--muted);opacity:.6}
+.summary{font-size:17px;line-height:1.6;max-width:70ch;margin-bottom:34px}
+.devs{display:flex;flex-direction:column;gap:16px}
+.dev{background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);padding:22px 26px}
+.dev h4{font-family:var(--font-display);font-size:19px;font-weight:700;letter-spacing:-.01em;margin:6px 0 8px}
+.dev .sw{font-size:15px;max-width:68ch}
+.dev dl{display:grid;grid-template-columns:130px 1fr;gap:10px 18px;margin-top:16px;
+  padding-top:16px;border-top:1px solid var(--line)}
+.dev dt{font-family:var(--font-mono);font-size:10px;letter-spacing:.1em;text-transform:uppercase;
+  color:var(--muted);padding-top:3px}
+.dev dd{font-size:14.5px;max-width:64ch}
+.dev dd.rec{color:var(--ink);font-weight:500}
+.dev .cav{margin-top:12px;font-size:13px;color:var(--muted)}
+.dev .src{display:inline-block;margin-top:12px;font-family:var(--font-mono);font-size:11px;
+  letter-spacing:.06em}
+.tbl-wrap{overflow-x:auto;border:1px solid var(--line);border-radius:var(--radius);background:var(--surface)}
+table.scores{width:100%;border-collapse:collapse;font-size:14px;min-width:560px}
+.scores th{font-family:var(--font-mono);font-size:10px;letter-spacing:.1em;text-transform:uppercase;
+  color:var(--muted);font-weight:500;text-align:left;padding:12px 14px;border-bottom:1px solid var(--line)}
+.scores td{padding:12px 14px;border-bottom:1px solid var(--line)}
+.scores tr:last-child td{border-bottom:none}
+.scores td.nm{font-family:var(--font-display);font-weight:600}
+.scores td.n{font-family:var(--font-mono);font-variant-numeric:tabular-nums}
+.scores td.n.hi{color:var(--accent);font-weight:600}
+.scores td.na{color:var(--muted);font-family:var(--font-mono);font-size:12px}
+.fine{color:var(--muted);font-size:12.5px;margin-top:10px;max-width:80ch}
+.items{list-style:none;border:1px solid var(--line);border-radius:var(--radius);background:var(--surface)}
+.items li{padding:16px 20px;border-bottom:1px solid var(--line)}
+.items li:last-child{border-bottom:none}
+.items .it{display:flex;gap:10px;align-items:baseline;flex-wrap:wrap}
+.items .it b{font-family:var(--font-display);font-weight:600;font-size:15px}
+.items .it .chip{padding:3px 9px}
+.items p{color:var(--ink);font-size:14.5px;margin-top:5px;max-width:74ch}
+.empty{background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);
+  padding:18px 20px;color:var(--muted);font-size:14px}
+.cover{list-style:none;display:flex;flex-direction:column;gap:8px}
+.cover li{color:var(--muted);font-size:13.5px;padding-left:16px;position:relative;max-width:78ch}
+.cover li::before{content:'';position:absolute;left:0;top:9px;width:6px;height:6px;border-radius:50%;
+  background:var(--birch)}
+@media (max-width:640px){
+  .hero{grid-template-columns:1fr;gap:14px;padding:22px 20px}
+  .dev{padding:20px}
+  .dev dl{grid-template-columns:1fr;gap:4px}
+  .dev dd{margin-bottom:8px}
+}
 </style>
 </head>
 <body>
@@ -428,7 +493,8 @@ async function boot(){
 
   const [{ count:compCount }, { data:briefs }] = await Promise.all([
     portal.from('competitors').select('id',{ count:'exact', head:true }),
-    portal.from('briefings').select('id,week_of,pressure_score,summary')
+    portal.from('briefings')
+      .select('id,week_of,pressure_score,summary,developments,full_report')
       .order('week_of',{ ascending:false }).limit(1),
   ]);
 
@@ -496,6 +562,9 @@ function render(client, session, compCount, latest){
       p.innerHTML = `<iframe src="${esc(s.src)}" title="${esc(s.title)}"
         sandbox="allow-scripts allow-popups allow-popups-to-escape-sandbox"
         loading="lazy"></iframe>`;
+    } else if(live){
+      /* A published briefing replaces the setup card and the placeholders. */
+      p.innerHTML = briefingPanel(s.id, latest);
     } else {
       p.innerHTML = (i === 0 ? routeCard(client, compCount, starts) : '')
                   + promiseBlocks(s.id, starts);
@@ -590,6 +659,127 @@ function promiseBlocks(id, starts){
         </div>`).join('')}
     </div>
   </div>`;
+}
+
+
+/* ── Briefing view ──────────────────────────────────────────────────────
+   Renders one published row of portal.briefings. It computes nothing: the
+   scores, the words and the order all come from the row, so the page can
+   never say something the review did not see. */
+const CHANNELS = [['paid','Paid'],['search','Search'],['web','Website'],['social','Social'],['email','Email']];
+const SECTION_KEYS = {
+  search:[['keyword_movement','Keyword movement'],['demand_shifts','Demand shifts']],
+  paid:[['live_ad_creative','Live ad creative'],['spend_signals','Spend signals']],
+  social:[['audience_cadence','Audience and cadence'],['content_themes','Content themes']],
+  owned:[['website_changes','Website changes'],['email_programs','Email programs']],
+};
+const EMPTY = {
+  keyword_movement:'No keyword movement to report this week.',
+  demand_shifts:'Demand trends need a few weeks of history. They appear here once there is a change to report.',
+  live_ad_creative:'No new competitor ad creative this week.',
+  spend_signals:'No spend signals this week.',
+  audience_cadence:'No change in competitor posting this week.',
+  content_themes:'No content themes to report this week.',
+  website_changes:'No pricing, offer or page changes on competitor sites this week.',
+  email_programs:'No competitor emails to report for this week.',
+};
+const hi = n => typeof n === 'number' && n >= 65;
+const band = n => n == null ? 'Not scored'
+  : n >= 80 ? 'Far above normal' : n >= 65 ? 'Above normal'
+  : n > 35 ? 'Within the normal range' : n > 20 ? 'Below normal' : 'Far below normal';
+const safeUrl = u => /^https:\/\//i.test(String(u || '')) ? u : null;
+
+function meter(label, c){
+  const n = c && typeof c.score === 'number' ? c.score : null;
+  return `<div class="meter">
+    <div class="l"><span>${esc(label)}</span><span>${n == null ? 'n/a' : n}</span></div>
+    <div class="t"><span class="mid"></span>${n == null ? '' :
+      `<span class="f${hi(n) ? ' hi' : ''}" style="width:${Math.max(2, Math.min(100, n))}%"></span>`}</div>
+  </div>`;
+}
+
+function itemsBlock(key, label, items){
+  const head = `<div class="sec-h"><h3>${esc(label)}</h3></div>`;
+  if(!items || !items.length) return `<div class="sec">${head}<div class="empty">${esc(EMPTY[key] || 'Nothing to report this week.')}</div></div>`;
+  return `<div class="sec">${head}<ul class="items">${items.map(x => {
+    const title = x.keyword || x.competitor || '';
+    const meta = x.format || x.platform || '';
+    const body = x.observation || x.message || x.theme || '';
+    return `<li><div class="it"><b>${esc(title)}</b>${x.keyword && x.competitor ? `<span class="chip">${esc(x.competitor)}</span>` : ''}${meta ? `<span class="chip">${esc(meta)}</span>` : ''}</div>
+      ${body ? `<p>${esc(body)}</p>` : ''}</li>`;
+  }).join('')}</ul></div>`;
+}
+
+function scoreTable(pr, only){
+  const comps = (pr && pr.competitors) || [];
+  if(!comps.length) return '';
+  const cols = only ? CHANNELS.filter(([k]) => only.includes(k)) : CHANNELS;
+  const setBased = comps.some(c => Object.values(c.components || {}).some(x => x && (x.basis === 'set' || x.basis === 'blend')));
+  return `<div class="sec">
+    <div class="sec-h"><h3>By competitor</h3><span>50 is a normal week</span></div>
+    <div class="tbl-wrap"><table class="scores">
+      <thead><tr><th>Competitor</th>${only ? '' : '<th>Overall</th>'}${cols.map(([, l]) => `<th>${esc(l)}</th>`).join('')}</tr></thead>
+      <tbody>${comps.map(c => `<tr><td class="nm">${esc(c.competitor)}</td>
+        ${only ? '' : `<td class="n${hi(c.score) ? ' hi' : ''}">${c.score ?? '—'}</td>`}
+        ${cols.map(([k]) => { const x = (c.components || {})[k];
+          return x && typeof x.score === 'number'
+            ? `<td class="n${hi(x.score) ? ' hi' : ''}">${x.score}</td>`
+            : `<td class="na">${x && x.basis === 'not collected' ? 'not yet' : '—'}</td>`; }).join('')}
+      </tr>`).join('')}</tbody>
+    </table></div>
+    ${setBased ? `<p class="fine">Where a competitor has less than four weeks of history on a channel, that channel compares them with the rest of the set this week. It moves to their own normal as history builds. Paid compares new launches, never how many ads a brand runs.</p>` : ''}
+  </div>`;
+}
+
+function overviewPanel(b){
+  const fr = b.full_report || {};
+  const pr = fr.pressure || {};
+  const mkt = pr.market || {};
+  const drv = pr.driver;
+  const score = typeof b.pressure_score === 'number' ? b.pressure_score : null;
+  const devs = Array.isArray(b.developments) ? b.developments : [];
+  const cov = Array.isArray(fr.coverage) ? fr.coverage : [];
+  return `
+  <div class="hero">
+    <div><div class="big">${score ?? '—'}</div><div class="of">of 100</div></div>
+    <div>
+      <p class="eyebrow">Competitive pressure · week of ${esc(b.week_of)}</p>
+      <div class="word">${esc(band(score))}</div>
+      <p class="cap">How unusual this week was for your competitors. 50 is a normal week, 65 is about one usual swing above it.</p>
+      ${drv && drv.competitor ? `<p class="drv">Driving it: <strong>${esc(drv.competitor)}</strong>${typeof drv.score === 'number' ? ` at ${drv.score}` : ''}</p>` : ''}
+      <div class="meters">${CHANNELS.map(([k, l]) => meter(l, (mkt.components || {})[k])).join('')}</div>
+    </div>
+  </div>
+  ${b.summary ? `<p class="summary">${esc(b.summary)}</p>` : ''}
+  <div class="sec">
+    <div class="sec-h"><h3>What changed</h3><span>${devs.length} development${devs.length === 1 ? '' : 's'}, ranked</span></div>
+    ${devs.length ? `<div class="devs">${devs.map(d => { const u = safeUrl(d.source_url); return `
+      <article class="dev">
+        <p class="eyebrow">${esc(d.competitor)}</p>
+        <h4>${esc(d.headline)}</h4>
+        <p class="sw">${esc(d.so_what)}</p>
+        <dl>
+          <dt>What we saw</dt><dd>${esc(d.observed)}</dd>
+          ${d.recommendation ? `<dt>Recommended</dt><dd class="rec">${esc(d.recommendation)}</dd>` : ''}
+        </dl>
+        ${d.caveat ? `<p class="cav">${esc(d.caveat)}</p>` : ''}
+        ${u ? `<a class="src" href="${esc(u)}" target="_blank" rel="noopener noreferrer">View source ↗</a>` : ''}
+      </article>`; }).join('')}</div>`
+      : `<div class="empty">A quiet week: nothing your competitors did clears the bar for a development.</div>`}
+  </div>
+  ${scoreTable(pr)}
+  ${cov.length ? `<div class="sec"><div class="sec-h"><h3>What we could not see</h3></div>
+    <ul class="cover">${cov.map(c => `<li>${esc(c)}</li>`).join('')}</ul></div>` : ''}`;
+}
+
+function briefingPanel(id, b){
+  if(id === 'overview') return overviewPanel(b);
+  const sections = ((b.full_report || {}).sections || {})[id] || {};
+  const keys = SECTION_KEYS[id];
+  if(!keys) return `<div class="empty">Nothing to show here yet.</div>`;
+  const chan = { search:['search'], paid:['paid'], social:['social'], owned:['web','email'] }[id];
+  return keys.map(([k, l]) => itemsBlock(k, l, sections[k])).join('')
+       + scoreTable((b.full_report || {}).pressure, chan);
 }
 
 sb.auth.onAuthStateChange((event) => {
