@@ -63,7 +63,7 @@ it needs a structure instead. Nothing runs past 40 words.
 
 **The summary never opens generically.** Do not begin with "This week saw continued
 competitive activity," "Overall," "In summary," or any variant. If nothing moved, say
-nothing moved — a quiet week reported honestly is more useful than a manufactured one.
+nothing moved. A quiet week reported honestly is more useful than a manufactured one.
 
 **The evidence bar tightens under compression, it does not loosen.** A ten-word headline
 cannot carry the hedge a paragraph can, so:
@@ -95,7 +95,7 @@ genuinely required, they belong to two developments or to one action with a sequ
 **30 words maximum per recommendation.** The observation field is a brief reference
 under 20 words that gives context, never a restatement of what the Analyst already said.
 
-**Tie every recommendation to a business outcome the reader owns** — conversion of
+**Tie every recommendation to a business outcome the reader owns:** conversion of
 existing traffic, new-member acquisition economics, market position, or the narrative
 problem. A recommendation whose payoff is "better marketing" has not been finished.
 
@@ -119,7 +119,7 @@ _OPERATOR = """
 ## OUTPUT PROFILE: OPERATOR
 
 Internal Parallel Path readers. Full detail, no word caps, no development cap. Include
-low-confidence items with their confidence level stated rather than suppressing them —
+low-confidence items with their confidence level stated rather than suppressing them:
 the reader is a strategist who can weigh them.
 
 Still no em dashes, no throat-clearing, no two-beat antithesis, no adverbs. Those rules

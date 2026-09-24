@@ -238,10 +238,21 @@ def build_digest(
                if (_date((a.get("data") or {}).get("start_date")) or date.min) >= cutoff
                and a not in geo]
         entry["geo_referencing_ads"] = [ad_item(a) for a in geo[:MAX_GEO_ADS]]
-        entry["started_in_last_7_days"] = len(
-            [a for a in acquisition
-             if (_date((a.get("data") or {}).get("start_date")) or date.min) >= cutoff])
-        entry["new_ads"] = [ad_item(a) for a in new[:MAX_NEW_ADS]]
+        started = [a for a in acquisition
+                   if (_date((a.get("data") or {}).get("start_date")) or date.min) >= cutoff]
+        # Meta files one message under many ad IDs (VIDA: 28 IDs, 8 messages, 23 Sep).
+        # The briefing counts messages, the same unit the pressure score counts.
+        entry["new_messages_since_last_week"] = len(
+            {mo._message_key(a.get("data") or {}) or f"id:{a['id']}" for a in started})
+        entry["new_ad_ids_since_last_week_OVERCOUNTS"] = len(started)
+        seen_msgs: dict[str, dict[str, Any]] = {}
+        for a in new:
+            k = mo._message_key(a.get("data") or {}) or f"id:{a['id']}"
+            if k in seen_msgs:
+                seen_msgs[k]["ad_ids_with_this_message"] += 1
+            elif len(seen_msgs) < MAX_NEW_ADS:
+                seen_msgs[k] = dict(ad_item(a), ad_ids_with_this_message=1)
+        entry["new_ads"] = list(seen_msgs.values())
         paid.append(entry)
     paid.sort(key=lambda e: -(e["ads_in_library"] or e["ads_classified"] or 0))
 
@@ -403,6 +414,49 @@ def digest_signal_ids(digest: dict[str, Any]) -> set[str]:
     return ids
 
 
+def alias_digest(digest: dict[str, Any]) -> tuple[dict[str, Any], dict[str, str]]:
+    """The digest the model sees, with every signal_id swapped for a short ref.
+
+    The second live run was held because the model copied one UUID with one character
+    wrong. It cannot mistype "s14". Returns (aliased digest, ref -> real id).
+    """
+    ref_of: dict[str, str] = {}
+
+    def walk(v: Any) -> Any:
+        if isinstance(v, dict):
+            out = {}
+            for k, x in v.items():
+                if k == "signal_id" and isinstance(x, str):
+                    if x not in ref_of:
+                        ref_of[x] = f"s{len(ref_of) + 1}"
+                    out[k] = ref_of[x]
+                else:
+                    out[k] = walk(x)
+            return out
+        if isinstance(v, list):
+            return [walk(x) for x in v]
+        return v
+
+    aliased = walk(digest)
+    return aliased, {r: i for i, r in ref_of.items()}
+
+
+def unalias(analysis: dict[str, Any], real: dict[str, str]) -> dict[str, Any]:
+    """Refs back to real ids in every signal_ids list. An unknown ref is left as written,
+    so the gate sees it and fails it as fabrication."""
+
+    def walk(v: Any) -> Any:
+        if isinstance(v, dict):
+            return {k: ([real.get(i, i) if isinstance(i, str) else i for i in x]
+                        if k == "signal_ids" and isinstance(x, list) else walk(x))
+                    for k, x in v.items()}
+        if isinstance(v, list):
+            return [walk(x) for x in v]
+        return v
+
+    return walk(analysis)
+
+
 # ── Stage 2: the model ───────────────────────────────────────────────────────
 
 ANALYST_SYSTEM = """You are the Scout Analyst for a client-facing competitive briefing.
@@ -436,6 +490,14 @@ How to read the digest:
   Label anything built on it as inference.
 - accuracy "directional" figures are estimates. Say so wherever one appears.
 - recruitment_ads are hiring, not acquisition. They are not competitive pressure.
+- Launches are counted in messages: new_messages_since_last_week. Write "launched 8 new
+  ad messages". Never quote new_ad_ids_since_last_week_OVERCOUNTS as ads launched: Meta
+  files one message under many ad IDs, so that number inflates a refresh into a surge.
+- Never claim a first, largest, biggest, most, record or highest unless the digest
+  shows that comparison. The pressure score is the comparison with a competitor's own
+  normal: write "furthest above its own normal", never "its largest push".
+- A number that appears in two fields of one development is the same number in both.
+- Cite every signal a claim rests on. A claim from a social post cites that post.
 - Keyword search volumes, if quoted, are the DC figures in the digest or none at all.
 - social: account_scope "local" is a location account and its posts are ground-level
   DC content. "regional" and "national" are the DMV or corporate feed; only their posts
@@ -450,30 +512,30 @@ competitor is. While status is "calibrating" there is no score yet; say nothing 
 pressure beyond the events. When you mention it, name the driver and what moved."""
 
 ANALYST_SCHEMA = """{
-  "summary": "<answers first: does anything competitors did change the client's plans? then what>",
+  "summary": "<answers first: does anything competitors did change the client's plans? then what. aim for 60 words, hard limit 75>",
   "developments": [
     {
       "competitor": "<name>",
-      "headline": "<competitor + verb, 10 words max>",
-      "so_what": "<why it matters to the client, 25 words max>",
-      "observed": "<what the signals show, stated as observation, 40 words max>",
+      "headline": "<competitor + verb, aim for 8 words, hard limit 10>",
+      "so_what": "<why it matters to the client, aim for 20 words, hard limit 25>",
+      "observed": "<what the signals show, stated as observation, aim for 35 words, hard limit 40>",
       "confidence": "high|medium|low",
       "signal_ids": ["<id>", "<id>"]
     }
   ],
   "sections": {
     "search": {
-      "keyword_movement": [{"keyword": "<kw>", "observation": "<40 words max>", "signal_ids": ["<id>"]}],
+      "keyword_movement": [{"keyword": "<kw>", "observation": "<aim for 35 words, hard limit 40>", "signal_ids": ["<id>"]}],
       "demand_shifts": []
     },
     "paid": {
       "live_ad_creative": [{"competitor": "<name>", "message": "<what the ads lead with>", "format": "<format>", "signal_ids": ["<id>"]}],
-      "spend_signals": [{"competitor": "<name>", "observation": "<40 words max>", "signal_ids": ["<id>"]}]
+      "spend_signals": [{"competitor": "<name>", "observation": "<aim for 35 words, hard limit 40>", "signal_ids": ["<id>"]}]
     },
     "social": {"audience_cadence": [], "content_themes": []},
     "owned": {
-      "website_changes": [{"competitor": "<name>", "observation": "<40 words max>", "applies_locally": "yes|unknown|no", "signal_ids": ["<id>"]}],
-      "email_programs": [{"competitor": "<name>", "observation": "<40 words max>", "signal_ids": ["<id>"]}]
+      "website_changes": [{"competitor": "<name>", "observation": "<aim for 35 words, hard limit 40>", "applies_locally": "yes|unknown|no", "signal_ids": ["<id>"]}],
+      "email_programs": [{"competitor": "<name>", "observation": "<aim for 35 words, hard limit 40>", "signal_ids": ["<id>"]}]
     }
   }
 }"""
@@ -493,7 +555,7 @@ Hard rules:
 
 STRATEGIST_SCHEMA = """{
   "recommendations": [
-    {"index": <the development's index>, "recommendation": "<30 words max>"}
+    {"index": <the development's index>, "recommendation": "<aim for 25 words, hard limit 30>"}
   ]
 }"""
 
@@ -559,6 +621,42 @@ def anthropic_model(system: str, user: str, max_tokens: int, temperature: float,
     raise RuntimeError("Anthropic API: retries exhausted")
 
 
+def gate_rules(profile: str) -> str:
+    """What validate_briefing.py fails, told to the model in its own words.
+
+    Built from the validator's own constants. Every held week so far was a rule the
+    gate enforced and the prompt never stated; this makes that impossible to repeat.
+    """
+    lines = [
+        "",
+        "",
+        "## THE REVIEW GATE",
+        "Code checks every text field before a client sees it. One breach anywhere holds",
+        "the whole briefing. These are checked mechanically, so follow them literally:",
+        "- No em dashes and no en dashes anywhere, including ranges. Write \"Sept 17 to 21\",",
+        "  \"$35 to $50\". Use commas or full stops between clauses.",
+        "- Never put \"not\" and then \"but\" or \"it's\" in one sentence. State what happened:",
+        "  \"Movement kept its price and added yoga\", never \"did not change price but added yoga\".",
+        "- Never use these phrases: " + ", ".join(f'"{x.strip()}"' for x in vb.BANNED_PHRASES) + ".",
+        "- Never end a field on a connecting word (" + "and, the, to, of, a, in, with, for, that"
+        + ") or a hyphen. Each field ends as a finished sentence or phrase.",
+        "- Never leave a text field empty. Omit the item instead.",
+    ]
+    if profile == "executive":
+        lines += [
+            "- Hard word ceilings, counted by splitting on spaces: summary "
+            f"{vb.CAPS['summary']}, headline {vb.CAPS['headline']}, so_what {vb.CAPS['so_what']}, "
+            f"recommendation {vb.CAPS['recommendation']}, every other text field "
+            f"{vb.CAPS['_default']}. Aim well under them.",
+            "- The summary never begins with: "
+            + ", ".join(f'"{x}"' for x in vb.GENERIC_OPENERS) + ".",
+            "- A development never has confidence \"low\" and never rests on one signal. Omit",
+            "  it instead. Every development cites at least two refs.",
+            f"- Between {vb.DEV_MIN} and {vb.DEV_MAX} developments.",
+        ]
+    return "\n".join(lines)
+
+
 def _never_block(terms: list[str]) -> str:
     if not terms:
         return ""
@@ -568,19 +666,21 @@ def _never_block(terms: list[str]) -> str:
 
 
 def run_analyst(model: ModelFn, digest: dict[str, Any], profile: str,
-                never: list[str] | None = None) -> dict[str, Any]:
+                never: list[str] | None = None, repair: str = "") -> dict[str, Any]:
     user = (
         f"Client: {digest['client']}. Week of {digest['week_of']}.\n\n"
         f"## DIGEST\n{json.dumps(digest, indent=1, default=str)}\n\n"
         f"## SCHEMA\n{ANALYST_SCHEMA}"
+        + repair
     )
     return extract_json(model(ANALYST_SYSTEM + profile_block(profile, "analyst")
-                              + _never_block(never or []), user, 10000, 0.1))
+                              + gate_rules(profile) + _never_block(never or []),
+                              user, 10000, 0.1))
 
 
 def run_strategist(
     model: ModelFn, devs: list[dict[str, Any]], brain: str, coverage: list[str],
-    client_name: str, profile: str, never: list[str] | None = None,
+    client_name: str, profile: str, never: list[str] | None = None, repair: str = "",
 ) -> dict[int, str]:
     if not devs:
         return {}
@@ -592,9 +692,11 @@ def run_strategist(
         f"## THIS WEEK'S DEVELOPMENTS\n{json.dumps(brief, indent=1)}\n\n"
         f"## WHAT WE COULD NOT SEE\n{json.dumps(coverage)}\n\n"
         f"## SCHEMA\n{STRATEGIST_SCHEMA}"
+        + repair
     )
     out = extract_json(model(STRATEGIST_SYSTEM + profile_block(profile, "strategist")
-                             + _never_block(never or []), user, 8000, 0.3))
+                             + gate_rules(profile) + _never_block(never or []),
+                             user, 8000, 0.3))
     recs = {}
     for r in out.get("recommendations") or []:
         if isinstance(r, dict) and isinstance(r.get("index"), int) and r.get("recommendation"):
@@ -641,11 +743,14 @@ def enrich(dev: dict[str, Any], signals_by_id: dict[str, dict[str, Any]]) -> dic
             if d.get("caveat"):
                 dev["caveat"] = d["caveat"]
             break
-    if "caveat" not in dev:
-        for s in cited:
-            d = s.get("data") or {}
-            if d.get("accuracy") == "directional" and d.get("caveat"):
-                dev["caveat"] = d["caveat"]
+    # A directional caveat (Semrush) belongs to a development built on directional
+    # data. One keyword signal among eight ads must not hang a search caveat on an ad
+    # story (week of 21 Sep: VIDA's launches carried Semrush's caveat).
+    directional = [s for s in cited if (s.get("data") or {}).get("accuracy") == "directional"]
+    if "caveat" not in dev and cited and len(directional) * 2 >= len(cited):
+        for s in directional:
+            if (s.get("data") or {}).get("caveat"):
+                dev["caveat"] = s["data"]["caveat"]
                 break
     return dev
 
@@ -682,7 +787,61 @@ def synthesize(
 
     never_terms = list((client.get("config") or {}).get("never_in_writing") or [])
     digest = dict(digest, pressure=pressure_for_digest(pressure))
-    analysis = run_analyst(model, digest, profile, never_terms)
+    aliased, real = alias_digest(digest)
+    ref_of = {i: r for r, i in real.items()}
+
+    # One repair round. A near miss (a word over a cap, a banned phrase) goes back to the
+    # model with the exact failures; the gate then judges the second answer as strictly
+    # as the first. Still failing after that, the week is held as before.
+    repair = srepair = ""
+    for attempt in (1, 2):
+        raw = run_analyst(model, aliased, profile, never_terms, repair)
+        row, rep = _assemble(unalias(raw, real), client=client, digest=digest,
+                             by_id=by_id, profile=profile, lo=lo, hi=hi,
+                             prior_score=prior_score, pressure=pressure, model=model,
+                             never_terms=never_terms, strategist_repair=srepair)
+        row["full_report"]["validation"]["attempts"] = attempt
+        if rep.ok or attempt == 2:
+            return row, rep
+        repair = _repair_block(raw, rep.failures, row["developments"], ref_of)
+        recs = [f for f in rep.failures if ".recommendation" in f]
+        srepair = ("\n\n## YOUR PREVIOUS RECOMMENDATIONS FAILED REVIEW\n"
+                   + "\n".join(f"- {f}" for f in _name_devs(recs, row["developments"]))
+                   + "\nWrite every recommendation again within the rules.") if recs else ""
+    raise AssertionError("unreachable")
+
+
+def _repair_block(raw: dict[str, Any], failures: list[str], devs: list[dict[str, Any]],
+                  ref_of: dict[str, str]) -> str:
+    lines = []
+    for f in _name_devs([f for f in failures if ".recommendation" not in f], devs):
+        for real_id, ref in ref_of.items():
+            f = f.replace(real_id, ref)
+        lines.append(f"- {f}")
+    return ("\n\n## YOUR PREVIOUS ANSWER FAILED REVIEW\n"
+            "Return the complete corrected JSON object. Fix every failure listed; change "
+            "nothing else. Word caps are hard limits: rewrite shorter, do not trim "
+            "mid-sentence. Cite only refs that appear in the digest.\n"
+            + "\n".join(lines)
+            + "\n\n## YOUR PREVIOUS ANSWER\n" + json.dumps(raw, indent=1))
+
+
+def _name_devs(failures: list[str], devs: list[dict[str, Any]]) -> list[str]:
+    """dev[n] is the gate's position after ordering; the model needs the headline."""
+    out = []
+    for f in failures:
+        m = re.match(r"dev\[(\d+)\]", f)
+        if m and int(m.group(1)) < len(devs):
+            f += f' (the development headlined "{devs[int(m.group(1))].get("headline")}")'
+        out.append(f)
+    return out
+
+
+def _assemble(analysis: dict[str, Any], *, client: dict[str, Any], digest: dict[str, Any],
+              by_id: dict[str, Any], profile: str, lo: int, hi: int,
+              prior_score: int | None, pressure: dict[str, Any], model: ModelFn,
+              never_terms: list[str], strategist_repair: str = "",
+              ) -> tuple[dict[str, Any], vb.Report]:
     raw_devs = [d for d in (analysis.get("developments") or []) if isinstance(d, dict)]
     suppressed = []
     if profile == "executive":
@@ -691,13 +850,14 @@ def synthesize(
         keep = []
         for d in raw_devs:
             ids = {x for x in (d.get("signal_ids") or []) if isinstance(x, str)}
-            (keep if len(ids) >= 2 else suppressed).append(d)
+            low = str(d.get("confidence") or "").lower() == "low"
+            (keep if len(ids) >= 2 and not low else suppressed).append(d)
         raw_devs = keep
     devs = order_developments(raw_devs, by_id, hi)
     devs = [enrich(d, by_id) for d in devs]
 
     recs = run_strategist(model, devs, client.get("brain") or "", digest["coverage"],
-                          client["name"], profile, never_terms)
+                          client["name"], profile, never_terms, strategist_repair)
     for i, d in enumerate(devs):
         if i in recs:
             d["recommendation"] = recs[i]
@@ -742,7 +902,8 @@ def synthesize(
     }
     for d in suppressed:
         row["full_report"]["validation"]["warnings"].append(
-            f"suppressed single-signal development: {str(d.get('headline'))[:80]}")
+            f"suppressed single-signal or low-confidence development: "
+            f"{str(d.get('headline'))[:80]}")
     for where, x in uncited:
         row["full_report"]["validation"]["warnings"].append(
             f"dropped uncited {where} item: {str(x.get('observation') or x.get('message'))[:80]}")
