@@ -307,6 +307,41 @@ def test_client_never_in_writing_terms():
     assert not rep.ok and any("eckington" in f for f in rep.failures)
 
 
+def test_http_model_call():
+    import os
+    os.environ.setdefault("ANTHROPIC_API_KEY", "test")
+    calls, waits = [], []
+
+    class R:
+        def __init__(self, code, data=None):
+            self.status_code, self._d, self.text = code, data, "err"
+        def json(self):
+            return self._d
+
+    replies = [R(529), R(200, {"stop_reason": "end_turn",
+                               "content": [{"type": "text", "text": '{"ok": 1}'}]})]
+
+    def post(url, headers, json, timeout):
+        calls.append(json)
+        return replies.pop(0)
+
+    out = sy.anthropic_model("sys", "user", 100, 0.1, post=post, sleep=waits.append)
+    assert out == '{"ok": 1}' and len(calls) == 2 and waits, "retries an overloaded API"
+    assert "temperature" not in calls[0], "the argument that broke the first live run"
+    assert calls[0]["model"] == sy.MODEL and calls[0]["system"] == "sys"
+    try:
+        sy.anthropic_model("s", "u", 1, 0, post=lambda *a, **k: R(200, {
+            "stop_reason": "max_tokens", "content": []}), sleep=waits.append)
+        raise AssertionError("a truncated reply must not be parsed")
+    except RuntimeError:
+        pass
+    try:
+        sy.anthropic_model("s", "u", 1, 0, post=lambda *a, **k: R(400), sleep=waits.append)
+        raise AssertionError("a 400 must raise, not return empty text")
+    except RuntimeError:
+        pass
+
+
 def test_extract_json():
     assert sy.extract_json('```json\n{"a": 1}\n```') == {"a": 1}
     assert sy.extract_json('Here you go {"a": 2} thanks') == {"a": 2}

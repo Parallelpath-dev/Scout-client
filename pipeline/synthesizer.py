@@ -515,16 +515,45 @@ def extract_json(raw: str) -> dict[str, Any]:
 ModelFn = Callable[[str, str, int, float], str]
 
 
-def anthropic_model(system: str, user: str, max_tokens: int, temperature: float) -> str:
-    from anthropic import Anthropic  # imported here so tests need no SDK
+ANTHROPIC_URL = "https://api.anthropic.com/v1/messages"
+ANTHROPIC_VERSION = "2023-06-01"   # the API's own versioned contract, not an SDK release
+RETRY_STATUS = {429, 500, 502, 503, 504, 529}
 
-    resp = Anthropic().messages.create(
-        model=MODEL, max_tokens=max_tokens, temperature=temperature,
-        system=system, messages=[{"role": "user", "content": user}],
-    )
-    if getattr(resp, "stop_reason", None) == "max_tokens":
-        raise RuntimeError("model hit max_tokens; output is truncated, refusing to parse it")
-    return "".join(b.text for b in resp.content if getattr(b, "type", "") == "text")
+
+def anthropic_model(system: str, user: str, max_tokens: int, temperature: float,
+                    *, post=None, sleep=None) -> str:
+    """One Messages API call over plain HTTP.
+
+    No SDK, on purpose. The first live run died because the runner installed a newer
+    SDK (1.8.0) that rejects `temperature`, and `anthropic>=0.40` let it. The HTTP
+    contract is versioned by the anthropic-version header and does not move under us.
+
+    `temperature` is accepted for the call sites' sake and not sent: it is the argument
+    that broke, and the output is shaped by the schema, not by sampling.
+    """
+    import time
+
+    import requests
+
+    post = post or requests.post
+    sleep = sleep or time.sleep
+    body = {"model": MODEL, "max_tokens": max_tokens, "system": system,
+            "messages": [{"role": "user", "content": user}]}
+    headers = {"x-api-key": os.environ["ANTHROPIC_API_KEY"],
+               "anthropic-version": ANTHROPIC_VERSION, "content-type": "application/json"}
+    for attempt in range(4):
+        r = post(ANTHROPIC_URL, headers=headers, json=body, timeout=300)
+        if r.status_code in RETRY_STATUS and attempt < 3:
+            sleep(min(60, 5 * 2 ** attempt))
+            continue
+        if r.status_code >= 400:
+            raise RuntimeError(f"Anthropic API {r.status_code}: {r.text[:400]}")
+        data = r.json()
+        if data.get("stop_reason") == "max_tokens":
+            raise RuntimeError("model hit max_tokens; output is truncated, refusing to parse it")
+        return "".join(b.get("text", "") for b in data.get("content") or []
+                       if b.get("type") == "text")
+    raise RuntimeError("Anthropic API: retries exhausted")
 
 
 def _never_block(terms: list[str]) -> str:
