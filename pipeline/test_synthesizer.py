@@ -346,7 +346,8 @@ def test_uncited_coverage_notes_are_dropped_not_held():
     row, rep = sy.synthesize(client=CLIENT, digest=digest(), signals=window(), prior_score=None,
                              pressure=pressure(), model=model)
     assert rep.ok, rep.render()
-    assert row["full_report"]["sections"]["owned"] == {"website_changes": [], "email_programs": []}
+    assert row["full_report"]["sections"]["owned"] == {
+        "website_changes": [], "email_programs": [], "recommendations": []}
     assert sum("dropped uncited" in w for w in row["full_report"]["validation"]["warnings"]) == 2
 
 
@@ -431,6 +432,44 @@ def test_long_recommendation_goes_back_to_the_strategist():
                              pressure=pressure(), model=m)
     assert rep.ok, rep.render()
     assert "FAILED REVIEW" in users[1] and "31 words" in users[1]
+
+
+def test_tab_recommendations_are_cited_and_gated():
+    # Jack, 24 Sep: the recommendations at the bottom of each tab are the dashboard's
+    # most valuable use. The Strategist writes them from the tab findings, citing refs.
+    seen = {}
+
+    def m(system, user, max_tokens, temperature):
+        if "Scout Analyst" in system:
+            return json.dumps(GOOD_ANALYSIS)
+        seen["user"] = user
+        ref = re.search(r'"signal_ids": \[\s*"(s\d+)"', user.split("FINDINGS BY TAB")[1]).group(1)
+        return json.dumps(dict(GOOD_STRATEGY, section_recommendations={
+            "paid": [
+                {"observation": "Onelife runs 266 ads.", "recommendation": "Keep launch spend on new prospects.",
+                 "why": "Members already see acquisition ads.", "signal_ids": [ref]},
+                {"observation": "Nothing cited.", "recommendation": "Do something.", "why": "Because."}],
+            "search": []}))
+
+    row, rep = sy.synthesize(client=CLIENT, digest=digest(), signals=window(), prior_score=None,
+                             pressure=pressure(), model=m)
+    assert rep.ok, rep.render()
+    assert "FINDINGS BY TAB" in seen["user"] and '"s' in seen["user"].split("FINDINGS BY TAB")[1]
+    paid = row["full_report"]["sections"]["paid"]["recommendations"]
+    assert len(paid) == 1 and paid[0]["signal_ids"] == ["a1"], "refs map back; uncited is dropped"
+    assert any("dropped uncited paid.recommendations" in w for w in row["full_report"]["validation"]["warnings"])
+
+
+def test_tab_recommendation_with_invented_ref_holds():
+    def m(system, user, max_tokens, temperature):
+        if "Scout Analyst" in system:
+            return json.dumps(GOOD_ANALYSIS)
+        return json.dumps(dict(GOOD_STRATEGY, section_recommendations={"social": [
+            {"observation": "A post.", "recommendation": "Post more.", "why": "Reach.",
+             "signal_ids": ["s9999"]}]}))
+    _, rep = sy.synthesize(client=CLIENT, digest=digest(), signals=window(), prior_score=None,
+                           pressure=pressure(), model=m)
+    assert not rep.ok and any("sections.social.recommendations" in f for f in rep.failures)
 
 
 def test_source_url_is_never_the_models():

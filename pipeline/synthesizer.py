@@ -555,11 +555,16 @@ ANALYST_SCHEMA = """{
 }"""
 
 STRATEGIST_SYSTEM = """You are the Scout Strategist. You receive this week's ranked
-developments and the client's strategic context, and write one recommended action for
-each development. You never introduce events or data that are not in the developments.
+developments, the findings for each tab of the dashboard (search, paid, social, owned),
+and the client's strategic context. You write one recommended action for each
+development, and up to three recommendations for each tab. You never introduce events
+or data that are not in the developments or the tab findings.
 
 Hard rules:
 1. One action per development, specific enough to brief someone on Monday.
+   Tab recommendations: zero to three per tab, each built on that tab's findings and
+   citing the refs of the findings it rests on, copied exactly. A tab with nothing
+   worth acting on gets an empty list. Never repeat a development's recommendation.
 2. Respect the client context. Where it marks something inferred or assumed, label any
    recommendation resting on it as inference.
 3. Anything the client context says is raised on a call and never in writing stays out
@@ -570,7 +575,16 @@ Hard rules:
 STRATEGIST_SCHEMA = """{
   "recommendations": [
     {"index": <the development's index>, "recommendation": "<aim for 25 words, hard limit 30>"}
-  ]
+  ],
+  "section_recommendations": {
+    "search": [{"observation": "<the finding it answers, aim for 15 words, hard limit 20>",
+                "recommendation": "<the action, aim for 25 words, hard limit 30>",
+                "why": "<the business outcome for the client, aim for 25 words, hard limit 40>",
+                "signal_ids": ["<ref>"]}],
+    "paid": [],
+    "social": [],
+    "owned": []
+  }
 }"""
 
 
@@ -695,15 +709,22 @@ def run_analyst(model: ModelFn, digest: dict[str, Any], profile: str,
 def run_strategist(
     model: ModelFn, devs: list[dict[str, Any]], brain: str, coverage: list[str],
     client_name: str, profile: str, never: list[str] | None = None, repair: str = "",
-) -> dict[int, str]:
-    if not devs:
-        return {}
+    sections: dict[str, Any] | None = None,
+) -> tuple[dict[int, str], dict[str, list[dict[str, Any]]]]:
+    """(recommendation per development index, recommendations per tab).
+
+    sections are the Analyst's tab findings with signal refs, so a tab recommendation
+    cites refs the gate can check against the digest like any other claim.
+    """
+    if not devs and not sections:
+        return {}, {}
     brief = [{"index": i, **{k: d.get(k) for k in
               ("competitor", "headline", "so_what", "observed", "caveat")}}
              for i, d in enumerate(devs)]
     user = (
         f"Client: {client_name}.\n\n## CLIENT CONTEXT\n{brain}\n\n"
         f"## THIS WEEK'S DEVELOPMENTS\n{json.dumps(brief, indent=1)}\n\n"
+        f"## THIS WEEK'S FINDINGS BY TAB\n{json.dumps(sections or {}, indent=1)}\n\n"
         f"## WHAT WE COULD NOT SEE\n{json.dumps(coverage)}\n\n"
         f"## SCHEMA\n{STRATEGIST_SCHEMA}"
         + repair
@@ -715,7 +736,25 @@ def run_strategist(
     for r in out.get("recommendations") or []:
         if isinstance(r, dict) and isinstance(r.get("index"), int) and r.get("recommendation"):
             recs[r["index"]] = str(r["recommendation"]).strip()
-    return recs
+    tab_recs: dict[str, list[dict[str, Any]]] = {}
+    raw_tabs = out.get("section_recommendations")
+    if isinstance(raw_tabs, dict):
+        for tab in ("search", "paid", "social", "owned"):
+            items = raw_tabs.get(tab)
+            if isinstance(items, list):
+                tab_recs[tab] = [x for x in items if isinstance(x, dict)][:3]
+    return recs, tab_recs
+
+
+def alias_ids(v: Any, ref_of: dict[str, str]) -> Any:
+    """Real ids to refs in every signal_ids list: the inverse of unalias."""
+    if isinstance(v, dict):
+        return {k: ([ref_of.get(i, i) if isinstance(i, str) else i for i in x]
+                    if k == "signal_ids" and isinstance(x, list) else alias_ids(x, ref_of))
+                for k, x in v.items()}
+    if isinstance(v, list):
+        return [alias_ids(x, ref_of) for x in v]
+    return v
 
 
 # ── Stage 3: assemble ────────────────────────────────────────────────────────
@@ -847,7 +886,8 @@ def synthesize(
         row, rep = _assemble(unalias(raw, real), client=client, digest=digest,
                              by_id=by_id, profile=profile, lo=lo, hi=hi,
                              prior_score=prior_score, pressure=pressure, model=model,
-                             never_terms=never_terms, strategist_repair=srepair)
+                             never_terms=never_terms, strategist_repair=srepair,
+                             ref_of=ref_of, real=real)
         row["full_report"]["validation"]["attempts"] = attempt
         if rep.ok or attempt == 2:
             return row, rep
@@ -889,6 +929,7 @@ def _assemble(analysis: dict[str, Any], *, client: dict[str, Any], digest: dict[
               by_id: dict[str, Any], profile: str, lo: int, hi: int,
               prior_score: int | None, pressure: dict[str, Any], model: ModelFn,
               never_terms: list[str], strategist_repair: str = "",
+              ref_of: dict[str, str] | None = None, real: dict[str, str] | None = None,
               ) -> tuple[dict[str, Any], vb.Report]:
     raw_devs = [d for d in (analysis.get("developments") or []) if isinstance(d, dict)]
     suppressed = []
@@ -904,15 +945,22 @@ def _assemble(analysis: dict[str, Any], *, client: dict[str, Any], digest: dict[
     devs = order_developments(raw_devs, by_id, hi)
     devs = [enrich(d, by_id) for d in devs]
 
-    recs = run_strategist(model, devs, client.get("brain") or "", digest["coverage"],
-                          client["name"], profile, never_terms, strategist_repair)
+    found = analysis.get("sections") if isinstance(analysis.get("sections"), dict) else {}
+    recs, tab_recs = run_strategist(model, devs, client.get("brain") or "", digest["coverage"],
+                                    client["name"], profile, never_terms, strategist_repair,
+                                    sections=alias_ids(found, ref_of or {}))
+    tab_recs = unalias(tab_recs, real or {})
     for i, d in enumerate(devs):
         if i in recs:
             d["recommendation"] = recs[i]
 
     score = pressure["market"]["score"]
     summary = str(analysis.get("summary") or "").strip()
-    sections, uncited = _sections(analysis.get("sections") or {})
+    merged = {t: (dict(v) if isinstance(v, dict) else {}) for t, v in found.items()}
+    for t, items in tab_recs.items():
+        merged.setdefault(t, {})["recommendations"] = items
+    # The same shape filter and uncited-drop as the findings, and then the same gate.
+    sections, uncited = _sections(merged)
 
     row = {
         "client_id": client["id"],
@@ -970,10 +1018,10 @@ def _sections(s: dict[str, Any]) -> tuple[dict[str, Any], list[tuple[str, dict]]
     not in the digest is kept: that is fabrication, and the gate must see it.
     """
     shape = {
-        "search": ("keyword_movement", "demand_shifts"),
-        "paid": ("live_ad_creative", "spend_signals"),
-        "social": ("audience_cadence", "content_themes"),
-        "owned": ("website_changes", "email_programs"),
+        "search": ("keyword_movement", "demand_shifts", "recommendations"),
+        "paid": ("live_ad_creative", "spend_signals", "recommendations"),
+        "social": ("audience_cadence", "content_themes", "recommendations"),
+        "owned": ("website_changes", "email_programs", "recommendations"),
     }
     out: dict[str, Any] = {}
     dropped: list[tuple[str, dict]] = []
