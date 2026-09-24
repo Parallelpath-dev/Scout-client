@@ -232,10 +232,27 @@ def pressure():
 
 def test_pressure_is_code_not_model():
     p = pressure()
-    assert p["market"]["status"] == "calibrating" and p["market"]["score"] is None
+    assert p["market"]["status"] == "scored" and p["market"]["score"] is not None, \
+        "a score from the first week"
     one = next(c for c in p["competitors"] if c["competitor"] == "Onelife")
     assert {e["kind"] for e in one["events"]} >= {"offer", "watch_term"}
     assert p["driver"]["competitor"] == "Onelife"
+
+
+def test_score_says_what_it_measures():
+    # Week of 21 Sep: organic social had 12 weeks of history, paid had none. Social is
+    # scored on its own normal, paid against the set, and the reader is told which.
+    per = {cid: {"metrics": {"ads_active": 30.0, "ads_launched": n, "social_posts": 5.0},
+                 "events": []} for cid, n in (("c-vida", 8.0), ("c-mov", 1.0), ("c-one", 0.5))}
+    hist = {cid: [{"social_posts": 2.0}] * 12 for cid in per}
+    hist[None] = [{"social_posts": 6.0}] * 12
+    p = sy.pressure_for_digest(mo.score_week(per, hist, COMPS))
+    vida = next(c for c in p["competitors"] if c["competitor"] == "VIDA")
+    assert vida["components"]["paid"]["basis"] == "set"
+    assert vida["components"]["social"]["basis"] == "own"
+    assert "ads_launched" in vida["scored_on"] and "ads_active" not in vida["scored_on"]
+    cov = sy.pressure_coverage(mo.score_week(per, hist, COMPS))
+    assert cov and cov[0].startswith("Paid scores compare") and "size alone" in cov[0], cov
 
 
 def test_end_to_end_publishes():
@@ -254,8 +271,9 @@ def test_end_to_end_publishes():
     fr = row["full_report"]
     assert set(fr["sections"]) == {"search", "paid", "social", "owned"}
     assert "junk" not in fr["sections"]["paid"] and fr["sections"]["owned"]["website_changes"] == []
-    assert row["pressure_score"] is None and fr["pressure"]["status"] == "calibrating"
-    assert fr["pressure"]["delta"] is None
+    assert fr["pressure"]["status"] == "scored"
+    assert row["pressure_score"] == fr["pressure"]["score"] is not None
+    assert fr["pressure"]["delta"] == row["pressure_score"] - 40
     assert fr["pressure"]["driver"]["competitor"] == "Onelife"
     assert fr["validation"]["ok"] is True
     assert "OUTPUT PROFILE: EXECUTIVE" in calls[0] and "OUTPUT PROFILE: EXECUTIVE" in calls[1]

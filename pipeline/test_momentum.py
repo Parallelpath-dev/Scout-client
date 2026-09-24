@@ -145,12 +145,51 @@ def test_events_add_after_calibration_and_cap():
     assert r["score"] == 50 + mo.EVENT_CAP
 
 
-def test_calibrating_still_reports_events_and_driver():
+def test_week_one_scores_every_component_against_the_set():
+    # Jack, 24 Sep: a score for each component from the first week, no lookback needed.
+    per = {
+        "big": {"metrics": {"ads_active": 70.0, "ads_launched": 0.5, "web": 0.0}, "events": []},
+        "nat": {"metrics": {"ads_active": 18.0, "ads_launched": 11.0, "web": 0.0}, "events": []},
+        "loc": {"metrics": {"ads_active": 30.0, "ads_launched": 3.0, "web": 0.0}, "events": []},
+    }
+    p = mo.score_week(per, {}, COMPS)
+    by = {c["competitor"]: c for c in p["competitors"]}
+    assert all(c["status"] == "scored" for c in by.values())
+    assert by["Movement"]["components"]["paid"]["score"] > 70, "11 launches against 0.5 and 3"
+    assert by["Onelife"]["components"]["paid"]["score"] < 50, \
+        "the biggest advertiser launching nothing is not paid pressure"
+    assert by["Onelife"]["metric_z"]["ads_active"] is None, "size is never compared to the set"
+    assert by["Movement"]["components"]["web"]["score"] == 50
+    assert by["Movement"]["components"]["email"]["basis"] == "not collected"
+    assert by["Movement"]["basis"]["ads_launched"] == "set"
+    assert p["market"]["status"] == "scored"
+    assert p["driver"]["competitor"] == "Movement"
+    assert "set" in p["driver"]["reason"]
+
+
+def test_own_history_takes_over_gradually():
+    peers = {"big": {"metrics": {"ads_launched": 1.0}, "events": []},
+             "loc": {"metrics": {"ads_launched": 1.0}, "events": []}}
+    per = dict(peers, nat={"metrics": {"ads_launched": 8.0}, "events": []})
+    week1 = mo.score_week(per, {}, COMPS)
+    usual = [{"ads_launched": 8.0}]
+    blend = mo.score_week(per, {"nat": usual * 2}, COMPS)
+    own = mo.score_week(per, {"nat": usual * 4}, COMPS)
+    s = lambda p: next(c for c in p["competitors"] if c["competitor"] == "Movement")
+    assert s(week1)["basis"]["ads_launched"] == "set" and s(week1)["score"] > 70
+    assert s(blend)["basis"]["ads_launched"] == "blend"
+    assert 50 < s(blend)["score"] < s(week1)["score"], "halfway to its own normal"
+    assert s(own)["basis"]["ads_launched"] == "own" and s(own)["score"] == 50, \
+        "eight launches every week is Movement's normal"
+
+
+def test_events_still_add():
     per = metrics([{"id": "e", "signal_type": "email", "competitor_id": "big",
                     "geo_relevance": "none", "data": {"email_type": "offer",
                                                       "materiality": "material"}}])
     p = mo.score_week(per, {}, COMPS)
-    assert p["market"]["status"] == "calibrating" and p["market"]["score"] is None
+    big = next(c for c in p["competitors"] if c["competitor"] == "Onelife")
+    assert big["event_points"] == 10 and big["score"] >= 60
     assert p["driver"]["competitor"] == "Onelife"
 
 
@@ -164,7 +203,7 @@ def test_driver_is_furthest_above_their_own_normal():
             "loc": [{"ads_active": 5.0, "ads_launched": 1.0}] * 8}
     p = mo.score_week(per, hist, COMPS)
     assert p["driver"]["competitor"] == "Movement", p["driver"]
-    assert p["market"]["status"] == "calibrating", "no market history yet"
+    assert p["driver"]["reason"] == "furthest above their own normal"
 
 
 def test_other_market_is_not_pressure():
