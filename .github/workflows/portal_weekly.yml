@@ -29,6 +29,12 @@ on:
         type: boolean
         required: false
         default: false
+      collectors:
+        description: 'Which collectors to run. A re-run of one collector should not re-pay for the others.'
+        type: choice
+        options: [all, ads, web, social, email]
+        required: false
+        default: all
       social_backfill_weeks:
         description: 'Organic social: also collect this many earlier weeks (0 = none, 12 = a quarter)'
         required: false
@@ -55,6 +61,7 @@ jobs:
         run: pip install -r pipeline/requirements.txt
 
       - name: Install Chromium
+        if: ${{ contains(fromJSON('["all", "web"]'), github.event.inputs.collectors || 'all') }}
         run: playwright install --with-deps chromium
 
       # Runs before anything touches the database. The classifier's vocabulary is the
@@ -69,6 +76,7 @@ jobs:
           python3 test_email_classify.py
 
       - name: Collect and classify Meta ads
+        if: ${{ contains(fromJSON('["all", "ads"]'), github.event.inputs.collectors || 'all') }}
         run: |
           ARGS="--client ${{ github.event.inputs.client_slug || 'bouldering-project' }}"
           if [ -n "${{ github.event.inputs.week }}" ]; then
@@ -82,7 +90,7 @@ jobs:
       # Runs after the ads step and independently of it: a failure in one collector
       # should not cost the week's other signals.
       - name: Collect web changes
-        if: always()
+        if: ${{ always() && contains(fromJSON('["all", "web"]'), github.event.inputs.collectors || 'all') }}
         run: |
           ARGS="--client ${{ github.event.inputs.client_slug || 'bouldering-project' }}"
           if [ -n "${{ github.event.inputs.week }}" ]; then
@@ -101,7 +109,7 @@ jobs:
       # nothing else. Folded into the step above, it would have skipped the week's ads.
       - name: Test the social collector
         id: social_tests
-        if: always()
+        if: ${{ always() && contains(fromJSON('["all", "social"]'), github.event.inputs.collectors || 'all') }}
         run: cd pipeline && python3 test_social.py
 
       - name: Collect organic social
@@ -127,7 +135,7 @@ jobs:
       # SENT, read off its own headers; forcing them all into the run's week would put a
       # fortnight of backlog into one Monday.
       - name: Classify inbound email
-        if: always()
+        if: ${{ always() && contains(fromJSON('["all", "email"]'), github.event.inputs.collectors || 'all') }}
         run: |
           ARGS="--client ${{ github.event.inputs.client_slug || 'bouldering-project' }}"
           if [ "${{ github.event.inputs.dry_run }}" = "true" ]; then
