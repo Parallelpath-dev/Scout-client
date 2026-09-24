@@ -287,6 +287,22 @@ def test_sections_are_gated():
     assert any("sections.owned" in f and "not collected" in f for f in rep.failures)
 
 
+def test_uncited_coverage_notes_are_dropped_not_held():
+    # The first live run: the model wrote "email monitoring began after this week" as a
+    # section item with no ids. Coverage already says it; the week must still publish.
+    a = json.loads(json.dumps(GOOD_ANALYSIS))
+    a["sections"]["owned"] = {
+        "email_programs": [{"competitor": "all", "signal_ids": [],
+                            "observation": "Email monitoring began after this week."}],
+        "website_changes": [{"competitor": "unknown", "observation": "One change seen."}]}
+    model, _ = fake_model(a, GOOD_STRATEGY)
+    row, rep = sy.synthesize(client=CLIENT, digest=digest(), signals=window(), prior_score=None,
+                             pressure=pressure(), model=model)
+    assert rep.ok, rep.render()
+    assert row["full_report"]["sections"]["owned"] == {"website_changes": [], "email_programs": []}
+    assert sum("dropped uncited" in w for w in row["full_report"]["validation"]["warnings"]) == 2
+
+
 def test_source_url_is_never_the_models():
     a = json.loads(json.dumps(GOOD_ANALYSIS))
     a["developments"][2]["source_url"] = "https://movementgyms.com/made-up"
