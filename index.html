@@ -283,6 +283,75 @@ table.scores{width:100%;border-collapse:collapse;font-size:14px;min-width:560px}
   .dev dl{grid-template-columns:1fr;gap:4px}
   .dev dd{margin-bottom:8px}
 }
+
+/* Competitor series. Fixed order (alphabetical by name), never by rank, so a
+   competitor keeps its colour on every chart. Validated as a set against the
+   dark surface (dataviz validator, 24 Sep 2026): CVD ΔE ≥ 8.4, normal ≥ 19.3.
+   Contrast sits under 3:1, so every chart carries a legend, direct labels and
+   a table view: colour is never the only way to tell series apart. */
+:root{--s1:#3987e5;--s2:#d95926;--s3:#199e70;--s4:#c98500;--s5:#d55181}
+.chart{background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);
+  padding:18px 18px 12px;position:relative}
+.chart svg{display:block;width:100%;height:auto;overflow:visible}
+/* On a phone a chart keeps a readable size and scrolls inside its card. */
+@media (max-width:640px){.chart{overflow-x:auto}.chart svg{min-width:600px}.tip{display:none}}
+.chart .ax{stroke:var(--line);stroke-width:1}
+.chart .ref{stroke:var(--muted);stroke-width:1;stroke-dasharray:3 4;opacity:.7}
+.chart text{fill:var(--muted);font-family:var(--font-mono);font-size:10.5px}
+.chart .lbl{fill:var(--ink);font-family:var(--font-body);font-size:11.5px}
+.chart .ln{fill:none;stroke-width:2;stroke-linejoin:round;stroke-linecap:round}
+.chart .hit{fill:transparent;cursor:crosshair}
+.chart .xh{stroke:var(--muted);stroke-width:1;opacity:0}
+.legend{display:flex;flex-wrap:wrap;gap:6px 16px;margin:0 0 12px;font-size:12.5px;color:var(--muted)}
+.legend span{display:inline-flex;align-items:center;gap:6px}
+.legend i{width:10px;height:10px;border-radius:2px;display:inline-block}
+.tip{position:absolute;pointer-events:none;background:var(--sunk);border:1px solid var(--line);
+  border-radius:8px;padding:8px 10px;font-size:12px;min-width:130px;opacity:0;transition:opacity .08s;z-index:5}
+.tip b{display:block;font-family:var(--font-mono);font-size:10px;letter-spacing:.08em;
+  text-transform:uppercase;color:var(--muted);font-weight:500;margin-bottom:4px}
+.tip div{display:flex;justify-content:space-between;gap:14px}
+.tip div strong{font-variant-numeric:tabular-nums}
+.tip i{width:8px;height:8px;border-radius:2px;display:inline-block;margin-right:6px}
+details.tv{margin-top:10px}
+details.tv summary{cursor:pointer;color:var(--muted);font-size:12.5px}
+details.tv table{margin-top:8px}
+.campaign{background:var(--surface);border:1px solid var(--line);border-left:3px solid var(--accent);
+  border-radius:var(--radius);padding:18px 22px}
+.campaign + .campaign{margin-top:12px}
+.campaign .top{display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap;align-items:baseline}
+.campaign h4{font-family:var(--font-display);font-size:16px;font-weight:700}
+.campaign ul{margin:10px 0 0 18px;color:var(--ink);font-size:14px}
+.campaign li{margin:3px 0}
+.kw td.me{background:var(--accent-soft)}
+.kw th.me{color:var(--accent)}
+.kw td.p1{font-weight:700;color:var(--ink)}
+.kw td.p2{color:var(--ink)}
+.kw td.p3{color:var(--muted)}
+.feed{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:12px}
+.card{background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);
+  padding:16px 18px;display:flex;flex-direction:column;gap:8px}
+.card .who{display:flex;align-items:center;gap:8px;justify-content:space-between}
+.card .who b{font-family:var(--font-display);font-size:14px}
+.card .dot{width:9px;height:9px;border-radius:2px;display:inline-block;margin-right:6px}
+.card .ttl{font-family:var(--font-display);font-weight:600;font-size:14px}
+.card .txt{font-size:13.5px;color:var(--ink);display:-webkit-box;-webkit-line-clamp:5;
+  -webkit-box-orient:vertical;overflow:hidden}
+.card .meta{font-family:var(--font-mono);font-size:10.5px;color:var(--muted);letter-spacing:.04em;
+  display:flex;gap:10px;flex-wrap:wrap;margin-top:auto;padding-top:6px}
+.key p{max-width:72ch;margin-bottom:12px}
+.bands{list-style:none;border:1px solid var(--line);border-radius:var(--radius);background:var(--surface)}
+.bands li{display:grid;grid-template-columns:90px 1fr;gap:14px;padding:12px 16px;border-bottom:1px solid var(--line)}
+.bands li:last-child{border-bottom:none}
+.bands b{font-family:var(--font-mono);font-size:12px}
+
+/* Recommendations close every tab: the part of the dashboard a reader acts on. */
+.recs{display:flex;flex-direction:column;gap:12px}
+.rec-card{background:var(--surface);border:1px solid var(--line);border-left:3px solid var(--accent);
+  border-radius:var(--radius);padding:18px 22px}
+.rec-card .obs{font-size:13px;color:var(--muted);max-width:72ch}
+.rec-card .act{font-family:var(--font-display);font-weight:600;font-size:16px;line-height:1.4;
+  margin:6px 0 6px;max-width:70ch}
+.rec-card .why{font-size:14px;max-width:72ch}
 </style>
 </head>
 <body>
@@ -367,6 +436,7 @@ const DEFAULT_SECTIONS = [
   { id:'paid',     label:'Paid Monitoring',     title:'Paid Monitoring' },
   { id:'social',   label:'Social Presence',     title:'Social Presence' },
   { id:'owned',    label:'Owned Channels',      title:'Owned Channels' },
+  { id:'key',      label:'How to read this',    title:'How to read this' },
 ];
 let SECTIONS = DEFAULT_SECTIONS;
 
@@ -389,6 +459,10 @@ const PROMISE = {
   social:[
     ['Audience and cadence','How each competitor\'s following and posting rhythm changed.'],
     ['Content themes','What they post about, and the theme none of them has claimed.'],
+  ],
+  key:[
+    ['The pressure score','What the number means, and how each channel is scored.'],
+    ['How the briefing is written','The checks every claim passes before you see it.'],
   ],
   owned:[
     ['Website changes','Pricing, offers, and page changes on competitor sites, the week they happen.'],
@@ -498,7 +572,34 @@ async function boot(){
       .order('week_of',{ ascending:false }).limit(1),
   ]);
 
-  render(client, session, compCount || 0, (briefs && briefs[0]) || null);
+  const latest = (briefs && briefs[0]) || null;
+  /* The charts read the same week's collected data the briefing was written
+     from, through the same row level security. Nothing here is required: a
+     failed read leaves that chart with an honest empty state. */
+  if(latest) latest._ctx = await loadContext(portal, latest.week_of);
+  render(client, session, compCount || 0, latest);
+}
+
+async function loadContext(portal, week){
+  const q = async p => { try { const { data, error } = await p; return error ? [] : (data || []); } catch(e){ return []; } };
+  const [competitors, channels, pressure, profiles, ads, posts, kws, geo] = await Promise.all([
+    q(portal.from('competitors').select('id,name')),
+    q(portal.from('channels').select('id,competitor_id,platform,scope,handle')),
+    q(portal.from('pressure_weekly').select('week_of,competitor_id,score,status,method').order('week_of')),
+    q(portal.from('signals').select('week_of,competitor_id,channel_id,platform:data->>platform,followers:data->>followers,posts:data->>posts_in_week,eng:data->>avg_engagement,capped:data->>capped')
+        .eq('signal_type','social_profile').order('week_of').limit(2000)),
+    q(portal.from('signals').select('id,competitor_id,geo_relevance,source_url,body:data->>body,title:data->>title,start:data->>start_date,format:data->>display_format,cta:data->>cta_text,recruit:data->>is_recruitment,scanned:data->text_scanned')
+        .eq('signal_type','ad_active').eq('week_of', week).gte('data->>start_date', addDays(week, -7)).limit(3000)),
+    q(portal.from('signals').select('id,competitor_id,channel_id,source_url,text:data->>text,platform:data->>platform,posted:data->>posted_at,likes:data->>likes,comments:data->>comments')
+        .eq('signal_type','social_post').eq('week_of', week).limit(500)),
+    q(portal.from('signals').select('competitor_id,signal_type,keywords:data->keywords')
+        .in('signal_type',['tracked_keyword_positions','client_keyword_positions']).eq('week_of', week)),
+    q(portal.from('ad_geo_weekly').select('competitor_id,week_of,total_available,dc_landing,dc_explicit,regional,other_market').order('week_of')),
+  ]);
+  const names = Object.fromEntries(competitors.map(c => [c.id, c.name]));
+  const order = competitors.map(c => c.name).sort((a, b) => a.localeCompare(b));
+  const color = Object.fromEntries(order.map((n, i) => [n, `var(--s${(i % 5) + 1})`]));
+  return { week, competitors, channels, pressure, profiles, ads, posts, kws, geo, names, order, color };
 }
 
 function render(client, session, compCount, latest){
@@ -571,6 +672,7 @@ function render(client, session, compCount, latest){
     }
     wrap.appendChild(p);
   });
+  wireCharts(wrap);
 }
 
 function show(id, btn){
@@ -663,31 +765,153 @@ function promiseBlocks(id, starts){
 
 
 /* ── Briefing view ──────────────────────────────────────────────────────
-   Renders one published row of portal.briefings. It computes nothing: the
-   scores, the words and the order all come from the row, so the page can
-   never say something the review did not see. */
+   Words come from the published briefing row, which passed review. Charts
+   and grids come from the same week's collected data, read through the
+   same row level security. The page counts and plots; it never writes a
+   claim of its own. */
 const CHANNELS = [['paid','Paid'],['search','Search'],['web','Website'],['social','Social'],['email','Email']];
+const FLOW = ['paid','social','web','email'];   // what a competitor does, not what it has
 const SECTION_KEYS = {
-  search:[['keyword_movement','Keyword movement'],['demand_shifts','Demand shifts']],
-  paid:[['live_ad_creative','Live ad creative'],['spend_signals','Spend signals']],
+  search:[['keyword_movement','Keyword notes'],['demand_shifts','Demand shifts']],
+  paid:[['live_ad_creative','What the ads lead with'],['spend_signals','Spend signals']],
   social:[['audience_cadence','Audience and cadence'],['content_themes','Content themes']],
   owned:[['website_changes','Website changes'],['email_programs','Email programs']],
 };
 const EMPTY = {
-  keyword_movement:'No keyword movement to report this week.',
+  keyword_movement:'No keyword notes this week.',
   demand_shifts:'Demand trends need a few weeks of history. They appear here once there is a change to report.',
   live_ad_creative:'No new competitor ad creative this week.',
   spend_signals:'No spend signals this week.',
   audience_cadence:'No change in competitor posting this week.',
   content_themes:'No content themes to report this week.',
   website_changes:'No pricing, offer or page changes on competitor sites this week.',
-  email_programs:'No competitor emails to report for this week.',
+  email_programs:'No competitor emails to report for this week. Email monitoring started on 23 Sep, so the first sends appear in the 28 Sep briefing.',
 };
 const hi = n => typeof n === 'number' && n >= 65;
 const band = n => n == null ? 'Not scored'
   : n >= 80 ? 'Far above normal' : n >= 65 ? 'Above normal'
   : n > 35 ? 'Within the normal range' : n > 20 ? 'Below normal' : 'Far below normal';
 const safeUrl = u => /^https:\/\//i.test(String(u || '')) ? u : null;
+/* Unknown is never zero: null, empty and missing stay null. Number(null) is 0. */
+const num = v => { if(v == null || v === '') return null; const n = Number(v); return Number.isFinite(n) ? n : null; };
+const fmtDate = d => { const t = new Date(String(d).slice(0,10) + 'T12:00:00Z');
+  return isNaN(t) ? '' : t.toLocaleDateString('en-US', { month:'short', day:'numeric' }); };
+const fmtN = n => n == null ? '—' : n >= 10000 ? (n/1000).toFixed(1).replace(/\.0$/,'') + 'k' : n.toLocaleString('en-US');
+/* Same rule as pipeline/momentum.py _message_key, so the chart and the score count
+   the same thing: body, then title, then card text; template tokens are not copy. */
+const msgKey = a => {
+  const cands = [a.body, a.title, ...Object.values(a.scanned || {})];
+  for(const c of cands){ if(typeof c === 'string' && c.trim() && !c.includes('{{'))
+    return c.replace(/\s+/g,' ').trim().toLowerCase().slice(0,160); }
+  return 'id:' + a.id;
+};
+const addDays = (d, n) => { const t = new Date(String(d).slice(0,10) + 'T12:00:00Z'); t.setUTCDate(t.getUTCDate() + n); return t.toISOString().slice(0,10); };
+
+function sec(title, note, body){
+  return `<div class="sec"><div class="sec-h"><h3>${esc(title)}</h3>${note ? `<span>${esc(note)}</span>` : ''}</div>${body}</div>`;
+}
+function empty(t){ return `<div class="empty">${esc(t)}</div>`; }
+function legend(names, color){
+  return `<div class="legend">${names.map(n => `<span><i style="background:${color[n]}"></i>${esc(n)}</span>`).join('')}</div>`;
+}
+function tableView(head, rows){
+  return `<details class="tv"><summary>Show as a table</summary><div class="tbl-wrap"><table class="scores">
+    <thead><tr>${head.map(h => `<th>${esc(h)}</th>`).join('')}</tr></thead>
+    <tbody>${rows.map(r => `<tr>${r.map((c, i) => `<td class="${i ? 'n' : 'nm'}">${esc(c ?? '—')}</td>`).join('')}</tr>`).join('')}</tbody>
+  </table></div></details>`;
+}
+
+/* Line chart, one shared y axis. series: [{name, color, values:[n|null]}].
+   Hover anywhere on the plot for every series at that week. */
+let CHART_SEQ = 0;
+function lineChart({ labels, series, yMax, ref, yLabel }){
+  const id = 'c' + (++CHART_SEQ);
+  const W = 720, H = 240, L = 34, R = 92, T = 12, B = 26;
+  const pw = W - L - R, ph = H - T - B;
+  const top = yMax || Math.max(1, ...series.flatMap(s => s.values.filter(v => v != null)));
+  const niceTop = top <= 10 ? Math.ceil(top) : Math.ceil(top / 5) * 5;
+  const x = i => L + (labels.length === 1 ? pw / 2 : (i * pw) / (labels.length - 1));
+  const y = v => T + ph - (v / niceTop) * ph;
+  const ticks = [0, niceTop / 2, niceTop].map(v => Math.round(v * 10) / 10);
+  const ends = [];
+  const paths = series.map(s => {
+    let d = '', pen = false;
+    s.values.forEach((v, i) => { if(v == null){ pen = false; return; }
+      d += (pen ? 'L' : 'M') + x(i).toFixed(1) + ' ' + y(v).toFixed(1) + ' '; pen = true; });
+    const lastI = s.values.map((v, i) => v == null ? -1 : i).filter(i => i >= 0).pop();
+    const dots = s.values.map((v, i) => v == null ? '' :
+      `<circle cx="${x(i).toFixed(1)}" cy="${y(v).toFixed(1)}" r="${i === lastI ? 4 : 2.5}" fill="${s.color}" stroke="var(--surface)" stroke-width="2"/>`).join('');
+    if(lastI != null) ends.push({ x: x(lastI) + 8, y: y(s.values[lastI]) + 4, t: `${s.name} ${s.values[lastI]}` });
+    return `<path class="ln" d="${d}" stroke="${s.color}"/>${dots}`;
+  }).join('');
+  /* Direct labels at the line ends, pushed apart so two lines ending on the same
+     value never print on top of each other. */
+  ends.sort((a, b) => a.y - b.y);
+  for(let i = 1; i < ends.length; i++) if(ends[i].y - ends[i - 1].y < 13) ends[i].y = ends[i - 1].y + 13;
+  const labelsSvg = ends.map(e => `<text class="lbl" x="${e.x.toFixed(1)}" y="${e.y.toFixed(1)}">${esc(e.t)}</text>`).join('');
+  const step = Math.max(1, Math.ceil(labels.length / 7));
+  const xl = labels.map((l, i) => (i % step === 0 || i === labels.length - 1)
+    ? `<text x="${x(i).toFixed(1)}" y="${H - 6}" text-anchor="middle">${esc(l)}</text>` : '').join('');
+  const hits = labels.map((l, i) => {
+    const w = labels.length === 1 ? pw : pw / (labels.length - 1);
+    return `<rect class="hit" data-i="${i}" x="${(x(i) - w / 2).toFixed(1)}" y="${T}" width="${w.toFixed(1)}" height="${ph}"/>`;
+  }).join('');
+  const data = JSON.stringify({ labels, series: series.map(s => ({ n: s.name, c: s.color, v: s.values })) });
+  return `<div class="chart" id="${id}" data-chart='${esc(data)}'>
+    <svg viewBox="0 0 ${W} ${H}" role="img" aria-label="${esc(yLabel || 'Chart')}">
+      ${ticks.map(t => `<line class="ax" x1="${L}" x2="${W - R}" y1="${y(t)}" y2="${y(t)}"/><text x="${L - 6}" y="${y(t) + 3}" text-anchor="end">${t}</text>`).join('')}
+      ${ref != null ? `<line class="ref" x1="${L}" x2="${W - R}" y1="${y(ref)}" y2="${y(ref)}"/>` : ''}
+      <line class="xh" x1="0" x2="0" y1="${T}" y2="${T + ph}"/>
+      ${paths}${labelsSvg}${xl}${hits}
+    </svg><div class="tip"></div></div>`;
+}
+
+/* Horizontal bars. rows: [{name, color, parts:[{label, value, shade}]}]. One
+   scale across rows; a 2px surface gap between stacked parts. */
+function barChart(rows, { unit }){
+  const id = 'c' + (++CHART_SEQ);
+  const W = 720, rowH = 30, L = 96, R = 60, T = 4;
+  const H = T + rows.length * rowH + 4;
+  const max = Math.max(1, ...rows.map(r => r.parts.reduce((a, p) => a + (p.value || 0), 0)));
+  const sx = v => (v / max) * (W - L - R);
+  const body = rows.map((r, i) => {
+    let at = L; const yy = T + i * rowH + 7;
+    const total = r.parts.reduce((a, p) => a + (p.value || 0), 0);
+    const segs = r.parts.filter(p => p.value > 0).map(p => {
+      const w = Math.max(2, sx(p.value) - 2);
+      const seg = `<rect x="${at.toFixed(1)}" y="${yy}" width="${w.toFixed(1)}" height="16" rx="3" fill="${r.color}" opacity="${p.shade ?? 1}"><title>${esc(r.name)} · ${esc(p.label)}: ${p.value}</title></rect>`;
+      at += sx(p.value); return seg; }).join('');
+    return `<text class="lbl" x="${L - 10}" y="${yy + 12}" text-anchor="end">${esc(r.name)}</text>${segs}
+      <text x="${(at + 8).toFixed(1)}" y="${yy + 12}">${total}${unit ? ' ' + esc(unit) : ''}</text>`;
+  }).join('');
+  return `<div class="chart" id="${id}"><svg viewBox="0 0 ${W} ${H}" role="img">${body}</svg></div>`;
+}
+
+function wireCharts(root){
+  root.querySelectorAll('.chart[data-chart]').forEach(el => {
+    if(el._wired) return; el._wired = true;
+    let d; try { d = JSON.parse(el.dataset.chart); } catch(e){ return; }
+    const tip = el.querySelector('.tip'), xh = el.querySelector('.xh'), svg = el.querySelector('svg');
+    const show = (rect) => {
+      const i = +rect.dataset.i;
+      const cx = +rect.getAttribute('x') + +rect.getAttribute('width') / 2;
+      xh.setAttribute('x1', cx); xh.setAttribute('x2', cx); xh.style.opacity = .6;
+      tip.textContent = '';
+      const b = document.createElement('b'); b.textContent = d.labels[i]; tip.appendChild(b);
+      d.series.forEach(s => { const row = document.createElement('div'); const l = document.createElement('span');
+        const sw = document.createElement('i'); sw.style.background = s.c; l.appendChild(sw); l.appendChild(document.createTextNode(s.n));
+        const v = document.createElement('strong'); v.textContent = s.v[i] == null ? '—' : s.v[i];
+        row.appendChild(l); row.appendChild(v); tip.appendChild(row); });
+      const box = svg.getBoundingClientRect(), host = el.getBoundingClientRect();
+      const px = (cx / svg.viewBox.baseVal.width) * box.width + (box.left - host.left);
+      tip.style.left = Math.min(host.width - 160, Math.max(8, px + 12)) + 'px'; tip.style.top = '14px'; tip.style.opacity = 1;
+    };
+    el.querySelectorAll('.hit').forEach(r => {
+      r.addEventListener('pointermove', () => show(r));
+      r.addEventListener('pointerleave', () => { tip.style.opacity = 0; xh.style.opacity = 0; });
+    });
+  });
+}
 
 function meter(label, c){
   const n = c && typeof c.score === 'number' ? c.score : null;
@@ -699,43 +923,70 @@ function meter(label, c){
 }
 
 function itemsBlock(key, label, items){
-  const head = `<div class="sec-h"><h3>${esc(label)}</h3></div>`;
-  if(!items || !items.length) return `<div class="sec">${head}<div class="empty">${esc(EMPTY[key] || 'Nothing to report this week.')}</div></div>`;
-  return `<div class="sec">${head}<ul class="items">${items.map(x => {
+  if(!items || !items.length) return sec(label, '', empty(EMPTY[key] || 'Nothing to report this week.'));
+  return sec(label, '', `<ul class="items">${items.map(x => {
     const title = x.keyword || x.competitor || '';
     const meta = x.format || x.platform || '';
     const body = x.observation || x.message || x.theme || '';
-    return `<li><div class="it"><b>${esc(title)}</b>${x.keyword && x.competitor ? `<span class="chip">${esc(x.competitor)}</span>` : ''}${meta ? `<span class="chip">${esc(meta)}</span>` : ''}</div>
+    return `<li><div class="it"><b>${esc(title)}</b>${meta ? `<span class="chip">${esc(meta)}</span>` : ''}</div>
       ${body ? `<p>${esc(body)}</p>` : ''}</li>`;
-  }).join('')}</ul></div>`;
+  }).join('')}</ul>`);
 }
 
-function scoreTable(pr, only){
+function scoreTable(pr){
   const comps = (pr && pr.competitors) || [];
   if(!comps.length) return '';
-  const cols = only ? CHANNELS.filter(([k]) => only.includes(k)) : CHANNELS;
   const setBased = comps.some(c => Object.values(c.components || {}).some(x => x && (x.basis === 'set' || x.basis === 'blend')));
-  return `<div class="sec">
-    <div class="sec-h"><h3>By competitor</h3><span>50 is a normal week</span></div>
-    <div class="tbl-wrap"><table class="scores">
-      <thead><tr><th>Competitor</th>${only ? '' : '<th>Overall</th>'}${cols.map(([, l]) => `<th>${esc(l)}</th>`).join('')}</tr></thead>
+  return sec('By competitor', '50 is a normal week', `<div class="tbl-wrap"><table class="scores">
+      <thead><tr><th>Competitor</th><th>Overall</th>${CHANNELS.map(([, l]) => `<th>${esc(l)}</th>`).join('')}</tr></thead>
       <tbody>${comps.map(c => `<tr><td class="nm">${esc(c.competitor)}</td>
-        ${only ? '' : `<td class="n${hi(c.score) ? ' hi' : ''}">${c.score ?? '—'}</td>`}
-        ${cols.map(([k]) => { const x = (c.components || {})[k];
+        <td class="n${hi(c.score) ? ' hi' : ''}">${c.score ?? '—'}</td>
+        ${CHANNELS.map(([k]) => { const x = (c.components || {})[k];
           return x && typeof x.score === 'number'
             ? `<td class="n${hi(x.score) ? ' hi' : ''}">${x.score}</td>`
             : `<td class="na">${x && x.basis === 'not collected' ? 'not yet' : '—'}</td>`; }).join('')}
       </tr>`).join('')}</tbody>
     </table></div>
-    ${setBased ? `<p class="fine">Where a competitor has less than four weeks of history on a channel, that channel compares them with the rest of the set this week. It moves to their own normal as history builds. Paid compares new launches, never how many ads a brand runs.</p>` : ''}
-  </div>`;
+    ${setBased ? `<p class="fine">Where a competitor has less than four weeks of history on a channel, that channel compares them with the rest of the set this week, and moves to their own normal as history builds. Paid compares new launches, never how many ads a brand runs.</p>` : ''}`);
+}
+
+/* Two or more activity channels above normal in the same week. The same test
+   internal Scout applies ("2+ channels co-firing"), run on the scores code
+   computed rather than asked of the model. */
+function campaigns(b){
+  const pr = (b.full_report || {}).pressure || {};
+  const devs = Array.isArray(b.developments) ? b.developments : [];
+  const found = (pr.competitors || []).map(c => {
+    const hot = FLOW.map(k => [k, (c.components || {})[k]]).filter(([, x]) => x && hi(x.score));
+    return { c, hot };
+  }).filter(r => r.hot.length >= 2);
+  const body = found.length ? found.map(({ c, hot }) => {
+    const dev = devs.find(d => d.competitor === c.competitor);
+    const label = { paid:'Paid', social:'Social', web:'Website', email:'Email' };
+    return `<div class="campaign"><div class="top">
+        <h4>${esc(c.competitor)}${dev ? ': ' + esc(dev.headline) : ''}</h4>
+        <span class="chip">${hot.length >= 3 ? 'High' : 'Medium'} confidence · ${hot.length} channels</span></div>
+      <ul>${hot.map(([k, x]) => `<li>${label[k]} at ${x.score}, ${x.basis === 'own' ? 'above their own normal' : 'above the rest of the set this week'}</li>`).join('')}</ul></div>`;
+  }).join('') : empty('No coordinated push this week. Scout flags a competitor when two or more of paid, social, website and email run above normal in the same week.');
+  return sec('Coordinated campaign signals', '', body);
+}
+
+function pressureTrend(ctx){
+  const rows = (ctx.pressure || []).filter(r => r.competitor_id == null);
+  if(rows.filter(r => r.score != null).length < 2) return '';
+  const labels = rows.map(r => fmtDate(r.week_of));
+  const s = [{ name:'Market', color:'var(--accent)', values: rows.map(r => r.score) }];
+  const v2 = rows.findIndex(r => r.method === 'momentum-v2');
+  const note = v2 > 0 ? `Before ${fmtDate(rows[v2].week_of)} the score measured organic social only. Paid, search and website count from ${fmtDate(rows[v2].week_of)}.` : '';
+  return sec('Competitive pressure over time', 'dashed line: a normal week',
+    lineChart({ labels, series: s, yMax: 100, ref: 50, yLabel: 'Market pressure score by week' })
+    + (note ? `<p class="fine">${esc(note)}</p>` : '')
+    + tableView(['Week', 'Score'], rows.map(r => [fmtDate(r.week_of), r.score ?? 'calibrating'])));
 }
 
 function overviewPanel(b){
-  const fr = b.full_report || {};
-  const pr = fr.pressure || {};
-  const mkt = pr.market || {};
-  const drv = pr.driver;
+  const fr = b.full_report || {}, pr = fr.pressure || {}, mkt = pr.market || {}, drv = pr.driver;
+  const ctx = b._ctx || {};
   const score = typeof b.pressure_score === 'number' ? b.pressure_score : null;
   const devs = Array.isArray(b.developments) ? b.developments : [];
   const cov = Array.isArray(fr.coverage) ? fr.coverage : [];
@@ -743,17 +994,18 @@ function overviewPanel(b){
   <div class="hero">
     <div><div class="big">${score ?? '—'}</div><div class="of">of 100</div></div>
     <div>
-      <p class="eyebrow">Competitive pressure · week of ${esc(b.week_of)}</p>
+      <p class="eyebrow">Competitive pressure · week of ${esc(fmtDate(b.week_of))}</p>
       <div class="word">${esc(band(score))}</div>
       <p class="cap">How unusual this week was for your competitors. 50 is a normal week, 65 is about one usual swing above it.</p>
       ${drv && drv.competitor ? `<p class="drv">Driving it: <strong>${esc(drv.competitor)}</strong>${typeof drv.score === 'number' ? ` at ${drv.score}` : ''}</p>` : ''}
       <div class="meters">${CHANNELS.map(([k, l]) => meter(l, (mkt.components || {})[k])).join('')}</div>
     </div>
   </div>
-  ${b.summary ? `<p class="summary">${esc(b.summary)}</p>` : ''}
-  <div class="sec">
-    <div class="sec-h"><h3>What changed</h3><span>${devs.length} development${devs.length === 1 ? '' : 's'}, ranked</span></div>
-    ${devs.length ? `<div class="devs">${devs.map(d => { const u = safeUrl(d.source_url); return `
+  ${scoreTable(pr)}
+  ${campaigns(b)}
+  ${b.summary ? sec('This week', '', `<p class="summary">${esc(b.summary)}</p>`) : ''}
+  ${sec('What changed', `${devs.length} development${devs.length === 1 ? '' : 's'}, ranked`,
+    devs.length ? `<div class="devs">${devs.map(d => { const u = safeUrl(d.source_url); return `
       <article class="dev">
         <p class="eyebrow">${esc(d.competitor)}</p>
         <h4>${esc(d.headline)}</h4>
@@ -765,21 +1017,165 @@ function overviewPanel(b){
         ${d.caveat ? `<p class="cav">${esc(d.caveat)}</p>` : ''}
         ${u ? `<a class="src" href="${esc(u)}" target="_blank" rel="noopener noreferrer">View source ↗</a>` : ''}
       </article>`; }).join('')}</div>`
-      : `<div class="empty">A quiet week: nothing your competitors did clears the bar for a development.</div>`}
-  </div>
-  ${scoreTable(pr)}
-  ${cov.length ? `<div class="sec"><div class="sec-h"><h3>What we could not see</h3></div>
-    <ul class="cover">${cov.map(c => `<li>${esc(c)}</li>`).join('')}</ul></div>` : ''}`;
+      : empty('A quiet week: nothing your competitors did clears the bar for a development.'))}
+  ${pressureTrend(ctx)}
+  ${cov.length ? sec('What we could not see', '', `<ul class="cover">${cov.map(c => `<li>${esc(c)}</li>`).join('')}</ul>`) : ''}`;
+}
+
+/* ── Search ── */
+function keywordGrid(ctx){
+  const kws = ctx.kws || [];
+  const mine = kws.find(k => k.signal_type === 'client_keyword_positions');
+  const theirs = kws.filter(k => k.signal_type === 'tracked_keyword_positions' && ctx.names[k.competitor_id]);
+  if(!mine && !theirs.length) return sec('Keyword positions', '', empty('Keyword tracking has not reported for this week.'));
+  const rowsBy = {};
+  const add = (who, list) => (Array.isArray(list) ? list : []).forEach(k => {
+    if(!k || !k.keyword) return;
+    (rowsBy[k.keyword] ||= { vol: k.volume ?? null, pos: {} }).pos[who] = k.position ?? null;
+    if(rowsBy[k.keyword].vol == null && k.volume != null) rowsBy[k.keyword].vol = k.volume;
+  });
+  const me = 'You';
+  if(mine) add(me, mine.keywords);
+  const comps = ctx.order.filter(n => theirs.some(t => ctx.names[t.competitor_id] === n));
+  theirs.forEach(t => add(ctx.names[t.competitor_id], t.keywords));
+  const cols = [me, ...comps];
+  const rows = Object.entries(rowsBy).sort((a, b) => (b[1].vol || 0) - (a[1].vol || 0));
+  const cls = p => p == null ? 'na' : p <= 5 ? 'p1' : p <= 10 ? 'p2' : 'p3';
+  return sec('Keyword positions', 'Google rank in DC · lower is better · — means not in the top 100',
+    `<div class="tbl-wrap"><table class="scores kw">
+      <thead><tr><th>Keyword</th><th>DC searches / mo</th>${cols.map(c => `<th class="${c === me ? 'me' : ''}">${esc(c === me ? 'Bouldering Project' : c)}</th>`).join('')}</tr></thead>
+      <tbody>${rows.map(([kw, r]) => `<tr><td class="nm">${esc(kw)}</td><td class="n">${fmtN(r.vol)}</td>
+        ${cols.map(c => { const p = r.pos[c]; return `<td class="n ${cls(p)}${c === me ? ' me' : ''}">${p ?? '—'}</td>`; }).join('')}</tr>`).join('')}</tbody>
+    </table></div><p class="fine">Search volumes are Semrush estimates for Washington, DC.</p>`);
+}
+
+/* ── Paid ── */
+function paidCharts(ctx){
+  const wk = ctx.week, from = addDays(wk, -7);
+  const latest = (ctx.geo || []).filter(g => String(g.week_of).slice(0,10) === String(wk).slice(0,10));
+  const out = [];
+  if(latest.length){
+    const rows = ctx.order.map(n => {
+      const g = latest.find(x => ctx.names[x.competitor_id] === n); if(!g) return null;
+      const dc = (g.dc_landing || 0) + (g.dc_explicit || 0), reg = g.regional || 0, oth = g.other_market || 0;
+      const rest = Math.max(0, (g.total_available || 0) - dc - reg - oth);
+      return { name:n, color:ctx.color[n], parts:[{label:'Names DC', value:dc, shade:1},{label:'Names the region', value:reg, shade:.7},{label:'Names no place', value:rest, shade:.4},{label:'Names another market', value:oth, shade:.18}] };
+    }).filter(Boolean);
+    out.push(sec('Ads running now', 'Meta Ad Library, full census',
+      `<div class="legend"><span><i style="background:var(--ink);opacity:1"></i>Names DC</span><span><i style="background:var(--ink);opacity:.7"></i>Names the region</span><span><i style="background:var(--ink);opacity:.4"></i>Names no place</span><span><i style="background:var(--ink);opacity:.18"></i>Names another market</span></div>`
+      + barChart(rows, { unit:'ads' })
+      + `<p class="fine">DC counts are a floor. Meta publishes no targeting data, so an ad that names no place may still run here.</p>`
+      + tableView(['Competitor','Names DC','Region','No place','Other market','Total'], rows.map(r => [r.name, ...r.parts.map(p => p.value), r.parts.reduce((a,p)=>a+p.value,0)]))));
+  }
+  const acq = (ctx.ads || []).filter(a => String(a.recruit) !== 'true');
+  const fresh = acq.filter(a => a.start && String(a.start).slice(0,10) >= from);
+  const byComp = {};
+  fresh.forEach(a => { const n = ctx.names[a.competitor_id]; if(!n) return;
+    const m = (byComp[n] ||= {}); const k = msgKey(a); (m[k] ||= { ad:a, ids:0 }).ids++; });
+  const launchRows = ctx.order.map(n => ({ name:n, color:ctx.color[n], parts:[{ label:'New messages', value:Object.keys(byComp[n] || {}).length }] }));
+  out.push(sec('New ad messages this week', `started ${fmtDate(from)} or later`,
+    barChart(launchRows, { unit:'' }) + `<p class="fine">Counted by message, not ad ID: Meta files one message under many IDs.</p>`));
+  const cards = ctx.order.flatMap(n => Object.values(byComp[n] || {}).map(x => ({ n, ...x })));
+  out.push(sec('Active ad intelligence', `${cards.length} new message${cards.length === 1 ? '' : 's'}`,
+    cards.length ? `<div class="feed">${cards.map(({ n, ad, ids }) => { const u = safeUrl(ad.source_url); return `
+      <div class="card"><div class="who"><b><span class="dot" style="background:${ctx.color[n]}"></span>${esc(n)}</b>${ad.format ? `<span class="chip">${esc(ad.format)}</span>` : ''}</div>
+        ${(ad.title || (ad.scanned || {}).card0_title) ? `<div class="ttl">${esc(ad.title || ad.scanned.card0_title)}</div>` : ''}
+        ${(ad.body || (ad.scanned || {}).card0_body) ? `<div class="txt">${esc(ad.body || ad.scanned.card0_body)}</div>` : ''}
+        <div class="meta"><span>Started ${esc(fmtDate(ad.start))}</span>${ad.cta ? `<span>${esc(ad.cta)}</span>` : ''}${ids > 1 ? `<span>${ids} ad IDs</span>` : ''}${u ? `<a href="${esc(u)}" target="_blank" rel="noopener noreferrer">Ad Library ↗</a>` : ''}</div>
+      </div>`; }).join('')}</div>` : empty('No new ad messages this week.')));
+  out.push(sec('Paid keyword trend', 'Semrush estimate, directional',
+    empty('The trend starts with the second weekly reading on 28 Sep. Semrush models paid keywords from its own crawl, so read it for direction, never as a count of what anyone bids on.')));
+  return out.join('');
+}
+
+/* ── Social ── */
+function socialCharts(ctx){
+  const prof = ctx.profiles || [];
+  const weeks = [...new Set(prof.map(p => String(p.week_of).slice(0,10)))].sort();
+  const out = [];
+  if(weeks.length){
+    const series = ctx.order.map(n => ({ name:n, color:ctx.color[n], values: weeks.map(w => {
+      const rs = prof.filter(p => String(p.week_of).slice(0,10) === w && ctx.names[p.competitor_id] === n && num(p.posts) != null);
+      return rs.length ? rs.reduce((a, p) => a + num(p.posts), 0) : null; }) }));
+    out.push(sec('Posts per week', `${weeks.length} weeks, every tracked account`,
+      legend(ctx.order, ctx.color)
+      + lineChart({ labels: weeks.map(fmtDate), series, yLabel:'Posts per week by competitor' })
+      + tableView(['Week', ...ctx.order], weeks.map((w, i) => [fmtDate(w), ...series.map(s => s.values[i])]))));
+  }
+  const wk = String(ctx.week).slice(0,10);
+  const chan = Object.fromEntries((ctx.channels || []).map(c => [c.id, c]));
+  const now = prof.filter(p => String(p.week_of).slice(0,10) === wk && ctx.names[p.competitor_id]);
+  if(now.length){
+    const rows = now.map(p => ({ n: ctx.names[p.competitor_id], ch: chan[p.channel_id] || {}, p }))
+      .sort((a, b) => ctx.order.indexOf(a.n) - ctx.order.indexOf(b.n) || String(a.p.platform).localeCompare(String(b.p.platform)));
+    const scopeWord = { local:'Location', regional:'DMV', national:'Corporate' };
+    out.push(sec('Social metrics by account', 'this week',
+      `<div class="tbl-wrap"><table class="scores"><thead><tr><th>Competitor</th><th>Platform</th><th>Account</th><th>Followers</th><th>Posts</th><th>Avg engagement</th></tr></thead>
+      <tbody>${rows.map(({ n, ch, p }) => `<tr><td class="nm">${esc(n)}</td><td>${esc(p.platform || ch.platform || '')}</td>
+        <td>${esc(scopeWord[ch.scope] || '')}${ch.handle ? ' · @' + esc(ch.handle) : ''}</td>
+        <td class="n">${fmtN(num(p.followers))}</td><td class="n">${num(p.posts) ?? '—'}${String(p.capped) === 'true' ? '+' : ''}</td>
+        <td class="n">${num(p.eng) == null ? '—' : Math.round(num(p.eng))}</td></tr>`).join('')}</tbody></table></div>
+      <p class="fine">— means the platform did not report it. Location accounts are the ground-level read; corporate feeds count for DC only where a post names it.</p>`));
+  }
+  const posts = (ctx.posts || []).filter(p => ctx.names[p.competitor_id])
+    .sort((a, b) => String(b.posted).localeCompare(String(a.posted)));
+  out.push(sec('Recent posts', `${posts.length} this week`,
+    posts.length ? `<div class="feed">${posts.map(p => { const n = ctx.names[p.competitor_id], u = safeUrl(p.source_url); return `
+      <div class="card"><div class="who"><b><span class="dot" style="background:${ctx.color[n]}"></span>${esc(n)}</b><span class="chip">${esc(p.platform || '')}</span></div>
+        ${p.text ? `<div class="txt">${esc(p.text)}</div>` : ''}
+        <div class="meta"><span>${esc(fmtDate(p.posted))}</span>${num(p.likes) != null ? `<span>${num(p.likes)} likes</span>` : ''}${num(p.comments) != null ? `<span>${num(p.comments)} comments</span>` : ''}${u ? `<a href="${esc(u)}" target="_blank" rel="noopener noreferrer">View post ↗</a>` : ''}</div>
+      </div>`; }).join('')}</div>` : empty('No posts collected this week.')));
+  return out.join('');
+}
+
+function keyPanel(){
+  return `<div class="key">
+  ${sec('The pressure score', '', `<p>One number for how unusual this week was for your competitors. It measures change, not size: a large advertiser having a normal week reads 50.</p>
+    <ul class="bands">
+      <li><b>80+</b><span>Far above normal. Two usual swings or more.</span></li>
+      <li><b>65 to 79</b><span>Above normal. About one usual swing up.</span></li>
+      <li><b>36 to 64</b><span>Within the normal range.</span></li>
+      <li><b>21 to 35</b><span>Below normal. A quieter week than usual.</span></li>
+      <li><b>20 or less</b><span>Far below normal.</span></li>
+    </ul>
+    <p style="margin-top:14px">Each channel is compared with that competitor's own last twelve weeks. Until a channel has four weeks of history, it is compared with the rest of your competitive set that week instead, and it moves to the competitor's own normal as history builds. Paid compares new ad launches, never how many ads a brand runs. Price changes, new offers, new locations and mentions of your Columbia Heights opening add points on top.</p>`)}
+  ${sec('How the briefing is written', '', `<p>Every claim traces to something we collected that week, and each development cites the signals behind it. A development resting on a single signal is left out rather than stated with false confidence. A briefing that fails these checks is held, and you see nothing until it is fixed.</p>
+    <p>DC counts are a floor. Meta publishes no targeting data, so "ads that name DC" is what we can observe, never "ads targeted at DC". Semrush paid figures are estimates and are labelled as such wherever they appear.</p>`)}
+  ${sec('What we collect', '', `<ul class="cover">
+    <li>Paid: every ad each competitor runs on Meta, read in full every week.</li>
+    <li>Search: Google positions in DC on the terms that matter to you, from Semrush.</li>
+    <li>Social: posts, followers and engagement on every tracked account, location accounts first.</li>
+    <li>Website: pricing and offer pages, checked weekly for changes.</li>
+    <li>Email: what each competitor sends its list, from our own subscriptions.</li></ul>`)}
+  </div>`;
+}
+
+const REC_TITLE = { search:'Search recommendations', paid:'Paid media recommendations',
+  social:'Social content recommendations', owned:'Owned channel recommendations' };
+function recsBlock(id, items){
+  const list = Array.isArray(items) ? items.filter(x => x && x.recommendation) : [];
+  return sec(REC_TITLE[id] || 'Recommendations', list.length ? `${list.length} this week` : '',
+    list.length ? `<div class="recs">${list.map(r => `
+      <div class="rec-card">
+        ${r.observation ? `<div class="obs">${esc(r.observation)}</div>` : ''}
+        <div class="act">${esc(r.recommendation)}</div>
+        ${r.why ? `<div class="why">${esc(r.why)}</div>` : ''}
+      </div>`).join('')}</div>`
+    : empty('Nothing on this channel calls for action this week.'));
 }
 
 function briefingPanel(id, b){
-  if(id === 'overview') return overviewPanel(b);
+  const ctx = b._ctx || { names:{}, order:[], color:{} };
   const sections = ((b.full_report || {}).sections || {})[id] || {};
-  const keys = SECTION_KEYS[id];
-  if(!keys) return `<div class="empty">Nothing to show here yet.</div>`;
-  const chan = { search:['search'], paid:['paid'], social:['social'], owned:['web','email'] }[id];
-  return keys.map(([k, l]) => itemsBlock(k, l, sections[k])).join('')
-       + scoreTable((b.full_report || {}).pressure, chan);
+  const notes = (SECTION_KEYS[id] || []).map(([k, l]) => itemsBlock(k, l, sections[k])).join('');
+  if(id === 'overview') return overviewPanel(b);
+  const recs = recsBlock(id, sections.recommendations);
+  if(id === 'search') return keywordGrid(ctx) + notes + recs;
+  if(id === 'paid') return paidCharts(ctx) + notes + recs;
+  if(id === 'social') return socialCharts(ctx) + notes + recs;
+  if(id === 'owned') return notes + recs;
+  if(id === 'key') return keyPanel();
+  return empty('Nothing to show here yet.');
 }
 
 sb.auth.onAuthStateChange((event) => {
