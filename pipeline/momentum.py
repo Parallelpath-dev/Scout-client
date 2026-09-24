@@ -12,7 +12,11 @@ THREE STEPS
    weighted by how much it is about THIS market:
 
        ads_active     acquisition ads running           (hiring ads excluded)
-       ads_launched   acquisition ads started this week
+       ads_launched   distinct messages among acquisition ads started this week. Meta
+                      campaigns duplicate one message into many ad IDs: VIDA relaunched
+                      5 messages as 23 IDs on 23 Sep 2026. Counted by ID, a refresh reads
+                      as a quadrupling. ads_active stays counted by ID, since duplication
+                      habits are part of each competitor's own normal.
        web            surfaced page changes, material 3 / minor 1
        email          emails, material 3 / other 1       (confirmations excluded)
        search         visibility on the DC-tracked keywords, sum of (21 - position)
@@ -46,6 +50,8 @@ Pure: no network, no database.
 """
 
 from __future__ import annotations
+
+import re
 
 from datetime import date, datetime, timedelta, timezone
 from typing import Any
@@ -96,6 +102,19 @@ def _date(v: Any) -> date | None:
         return None
 
 
+_WS = re.compile(r"\s+")
+
+
+def _message_key(d: dict[str, Any]) -> str | None:
+    """What an ad says, normalised, so duplicates of one message count once. Template
+    tokens are not copy; a DCO ad whose top level is a token falls back to its cards."""
+    cands = [d.get("body"), d.get("title")] + list((d.get("text_scanned") or {}).values())
+    for c in cands:
+        if isinstance(c, str) and c.strip() and "{{" not in c:
+            return _WS.sub(" ", c).strip().lower()[:160]
+    return None
+
+
 def geo_weight(signal: dict[str, Any], single_market: bool) -> float:
     if single_market:
         return 1.0
@@ -124,6 +143,7 @@ def week_metrics(
     out = {cid: {"metrics": {}, "events": []} for cid in comp}
     terms = [t.lower() for t in (watch_terms or []) if t]
     seen_types: dict[str, set[str]] = {cid: set() for cid in comp}
+    launched: dict[str, dict[str, float]] = {cid: {} for cid in comp}   # message -> weight
     launched_from = wk - timedelta(days=7)
 
     def add(cid: str, k: str, v: float) -> None:
@@ -153,7 +173,8 @@ def week_metrics(
             add(cid, "ads_active", w)
             started = _date(d.get("start_date"))
             if started and started >= launched_from:
-                add(cid, "ads_launched", w)
+                msg = _message_key(d) or f"id:{s['id']}"
+                launched[cid][msg] = max(w, launched[cid].get(msg, 0.0))
 
         elif t == "web_change":
             if not d.get("surfaces"):
@@ -211,6 +232,10 @@ def week_metrics(
             if hit and not any(e["kind"] == "watch_term" and e["signal_id"] == s["id"]
                                for e in out[cid]["events"]):
                 event(cid, "watch_term", s, f'mentions "{hit}"')
+
+    for cid, msgs in launched.items():
+        if msgs:
+            add(cid, "ads_launched", sum(msgs.values()))
 
     # A collector that ran and found nothing is a real zero. A collector that did not
     # run, or a channel that does not exist, is unknown and must not drag a median down.

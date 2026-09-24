@@ -192,6 +192,16 @@ def test_partial_social_collection_is_unknown():
         social_channels={"big": {"fb"}})["big"]["metrics"]["social_posts"] == 0.0
 
 
+def test_launches_count_messages_not_ids():
+    dup = [{"id": f"v{i}", "signal_type": "ad_active", "competitor_id": "loc",
+            "geo_relevance": "none",
+            "data": {"start_date": "2026-09-19", "body": "Join  VIDA today" if i < 20 else f"Msg {i}"}}
+           for i in range(23)]
+    m = metrics(dup)["loc"]["metrics"]
+    assert m["ads_active"] == 23.0, "running ads still counted by ID"
+    assert m["ads_launched"] == 4.0, "20 duplicates of one message plus 3 others is 4 messages"
+
+
 def main() -> int:
     tests = [v for k, v in sorted(globals().items()) if k.startswith("test_")]
     failed = 0
