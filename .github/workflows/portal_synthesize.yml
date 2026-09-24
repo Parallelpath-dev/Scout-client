@@ -1,0 +1,81 @@
+name: Portal synthesize
+
+# Turns the week's portal.signals into one portal.briefings row.
+#
+# Separate from portal_weekly.yml, and later in the day, because the week's signals
+# arrive from two places on two clocks:
+#
+#   08:00 UTC  portal_weekly.yml       ads, web changes, email
+#   14:00 UTC  Semrush scheduled task  keyword positions, domain overviews
+#
+# Synthesizing at 08:00 would write every Monday's briefing without search. 15:00 UTC
+# is after both, and is still Monday morning in DC.
+#
+# A failed validation writes the row HELD (published_at = NULL, invisible to the client)
+# and exits 1, which turns this run red. That red run is the alert.
+
+on:
+  schedule:
+    - cron: '0 15 * * 1'
+  workflow_dispatch:
+    inputs:
+      client_slug:
+        description: 'Client slug to run'
+        required: false
+        default: 'bouldering-project'
+      week:
+        description: 'ISO date inside the target week (blank = this week)'
+        required: false
+        default: ''
+      mode:
+        description: 'digest (no model, no write) | dry_run (model, no write) | live'
+        required: false
+        default: 'live'
+      backfill_pressure:
+        description: 'Store pressure history for this many earlier weeks first (0 = none)'
+        required: false
+        default: '0'
+
+env:
+  SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+  SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+  ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+
+jobs:
+  synthesize:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: pip install -r pipeline/requirements.txt
+
+      # The gate and the ordering rules are what stand between a model's bad week and
+      # a client's inbox. Run their fixtures before anything reads the database.
+      - name: Test the synthesizer and the gate
+        run: |
+          cd pipeline
+          python3 test_momentum.py
+          python3 test_synthesizer.py
+          python3 validate_briefing.py --selftest
+
+      - name: Synthesize
+        run: |
+          ARGS="--client ${{ github.event.inputs.client_slug || 'bouldering-project' }}"
+          if [ -n "${{ github.event.inputs.week }}" ]; then
+            ARGS="$ARGS --week ${{ github.event.inputs.week }}"
+          fi
+          case "${{ github.event.inputs.mode }}" in
+            digest)  ARGS="$ARGS --digest-only" ;;
+            dry_run) ARGS="$ARGS --dry-run" ;;
+          esac
+          if [ "${{ github.event.inputs.backfill_pressure || '0' }}" != "0" ]; then
+            ARGS="$ARGS --backfill-pressure ${{ github.event.inputs.backfill_pressure }}"
+          fi
+          cd pipeline && python3 synthesizer.py $ARGS

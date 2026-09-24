@@ -29,6 +29,10 @@ on:
         type: boolean
         required: false
         default: false
+      social_backfill_weeks:
+        description: 'Organic social: also collect this many earlier weeks (0 = none, 12 = a quarter)'
+        required: false
+        default: '0'
 
 env:
   SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
@@ -88,6 +92,32 @@ jobs:
             ARGS="$ARGS --dry-run"
           fi
           cd pipeline && python3 collect_web_changes.py $ARGS
+
+      # Organic social. One Apify actor per platform, every channel on that platform in
+      # one run. Posts published in the seven days before the briefing week, filed under
+      # the briefing week. A platform whose actor fails writes nothing and its channels
+      # read as unknown, never as zero.
+      # Its own test step, so a broken social fixture stops the social collector and
+      # nothing else. Folded into the step above, it would have skipped the week's ads.
+      - name: Test the social collector
+        id: social_tests
+        if: always()
+        run: cd pipeline && python3 test_social.py
+
+      - name: Collect organic social
+        if: ${{ !cancelled() && steps.social_tests.outcome == 'success' }}
+        run: |
+          ARGS="--client ${{ github.event.inputs.client_slug || 'bouldering-project' }}"
+          if [ -n "${{ github.event.inputs.week }}" ]; then
+            ARGS="$ARGS --week ${{ github.event.inputs.week }}"
+          fi
+          if [ "${{ github.event.inputs.dry_run }}" = "true" ]; then
+            ARGS="$ARGS --dry-run"
+          fi
+          if [ "${{ github.event.inputs.social_backfill_weeks || '0' }}" != "0" ]; then
+            ARGS="$ARGS --backfill-weeks ${{ github.event.inputs.social_backfill_weeks }}"
+          fi
+          cd pipeline && python3 collect_social.py $ARGS
 
       # Email arrives continuously via the portal-inbound-email webhook and is stored
       # raw; this is the step that turns it into signals. It reads whatever accumulated

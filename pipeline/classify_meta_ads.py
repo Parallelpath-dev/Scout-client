@@ -75,11 +75,11 @@ from typing import Any, Iterable
 
 import requests
 
+import apify
 from geo import GeoClassifier, campaign_scope_hint, extract_ad_fields, is_recruitment
 from supa import Supa
 
 ACTOR = "apify~facebook-ads-scraper"
-APIFY_BASE = "https://api.apify.com/v2"
 
 # The Ad Library URL that actually works. The two things that break it silently:
 #   - view_all_page_id must be the CLASSIC page id, not the profile-style id starting 1000.
@@ -138,45 +138,9 @@ def _run_one(
         "resultsLimit": results_limit,
         "activeStatus": "active",
     }
-    r = requests.post(
-        f"{APIFY_BASE}/acts/{ACTOR}/runs",
-        params={"token": token},
-        json=payload,
-        timeout=60,
-    )
-    r.raise_for_status()
-    run = r.json()["data"]
-    run_id, dataset_id = run["id"], run["defaultDatasetId"]
-    print(f"  apify run {run_id}")
-
-    deadline = time.time() + timeout_s
-    status = run["status"]
-    while status in ("READY", "RUNNING") and time.time() < deadline:
-        time.sleep(10)
-        s = requests.get(
-            f"{APIFY_BASE}/actor-runs/{run_id}", params={"token": token}, timeout=60
-        )
-        s.raise_for_status()
-        status = s.json()["data"]["status"]
-
-    if status != "SUCCEEDED":
-        raise RuntimeError(f"apify run ended {status} (run {run_id})")
-
-    items: list[dict[str, Any]] = []
-    offset = 0
-    while True:
-        d = requests.get(
-            f"{APIFY_BASE}/datasets/{dataset_id}/items",
-            params={"token": token, "offset": offset, "limit": 1000, "clean": "true"},
-            timeout=120,
-        )
-        d.raise_for_status()
-        batch = d.json()
-        if not batch:
-            break
-        items.extend(batch)
-        offset += len(batch)
-    return items
+    # Start, poll and page through the dataset in apify.py, shared with the social
+    # collector. A failed run raises there rather than returning an empty list.
+    return apify.run_actor(token, ACTOR, payload, timeout_s=timeout_s)
 
 
 # ── shaping ─────────────────────────────────────────────────────────────────
