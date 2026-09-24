@@ -57,6 +57,7 @@ jobs:
       - name: Test the synthesizer and the gate
         run: |
           cd pipeline
+          python3 test_momentum.py
           python3 test_synthesizer.py
           python3 validate_briefing.py --selftest
 

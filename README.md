@@ -29,6 +29,9 @@ pipeline/test_email_classify.py fixtures for the above
 
 pipeline/executive_profile.py   prompt constraints for the client-facing output profile
 pipeline/week_window.py         which signals belong to a briefing week. One definition.
+pipeline/calibrate.py           scores a weekly number against this client's own normal. No deps.
+pipeline/momentum.py            counted, DC-weighted pressure per competitor, calibrated
+pipeline/test_momentum.py       fixtures for the two above
 pipeline/synthesizer.py         signals -> one portal.briefings row. Analyst + Strategist.
 pipeline/test_synthesizer.py    fixtures for the above, with a fake model
 pipeline/validate_briefing.py   the gate. Holds a briefing rather than publishing a bad one.
@@ -48,6 +51,7 @@ migrations/010_client_level_signals.sql competitor_id nullable, NULLS NOT DISTIN
 migrations/011_multiple_web_pages.sql   channels unique key includes url; seeds pricing pages
 migrations/012_prices_by_location.sql   Movement prices by home gym
 migrations/013_inbound_emails.sql       raw inbound mail. Every column nullable on purpose.
+migrations/014_pressure_weekly.sql      pressure history per competitor + market; watch terms
 
 scripts/test_isolation.py       proves a client login can't reach another client
 scripts/extract-brand.js        console script that pulls a client's palette

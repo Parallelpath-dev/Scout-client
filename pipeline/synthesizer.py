@@ -27,8 +27,10 @@ Three stages, and only the middle one is a model.
 
   3. ASSEMBLE and GATE (code). Developments are ordered by the best surface rank
      among the signals they cite, cut to the profile's ceiling, and given their source
-     link and any caveat carried on those signals. The pressure score is computed here
-     from the Analyst's component scores, not taken from the model's arithmetic. Then
+     link and any caveat carried on those signals. The pressure score is not the
+     model's: momentum.py counts it and calibrate.py scores it against each
+     competitor's own last 12 weeks, before the Analyst runs, and the Analyst is told
+     the result to explain. Then
      validate_briefing.validate() decides: pass publishes, fail writes the row HELD
      (published_at = NULL) and exits 1 so the workflow goes red.
 
@@ -40,7 +42,8 @@ WHAT THE FULL REPORT HOLDS
 `summary`, `developments` and `pressure_score` are columns. `full_report` holds the
 rest, keyed by the portal's own section ids so each tab reads its own key:
 
-    pressure   score, components, weights applied, driver, prior score, delta
+    pressure   market and per-competitor momentum: status, score, trend, metrics,
+               metric z-scores, events, driver, prior score, delta
     sections   search  {keyword_movement, demand_shifts}
                paid    {live_ad_creative, spend_signals}
                social  {audience_cadence, content_themes}
@@ -59,6 +62,7 @@ import sys
 from datetime import date, datetime, timedelta, timezone
 from typing import Any, Callable
 
+import momentum as mo
 import validate_briefing as vb
 from executive_profile import DEV_RANGE, profile_block
 from supa import Supa
@@ -69,11 +73,6 @@ MODEL = os.environ.get("SCOUT_MODEL", "claude-sonnet-4-6")
 RANKED_TYPES = ("web_change", "email")
 SEARCH_TYPES = ("tracked_keyword_positions", "client_keyword_positions", "domain_overview")
 UNRANKED = (9, 9, 9)
-
-# Same five components and weights as the internal tool. News has no collector in this
-# build, so it is always null and its weight is redistributed rather than scored zero:
-# a zero would read as "competitors were quiet in the press", which nobody observed.
-WEIGHTS = {"social": 30, "owned": 25, "paid": 20, "search": 15, "news": 10}
 
 # Per-competitor caps on what reaches the model. The rollup carries the totals; these
 # are only the ads worth naming.
@@ -259,7 +258,7 @@ def build_digest(
         if isinstance(kws, list):
             item["keywords"] = [
                 {k: kw.get(k) for k in ("keyword", "position", "previous_position", "volume",
-                                         "url") if kw.get(k) is not None}
+                                         "landing", "url") if kw.get(k) is not None}
                 for kw in kws if isinstance(kw, dict)
             ][:15]
         else:
@@ -376,16 +375,14 @@ How to read the digest:
 - recruitment_ads are hiring, not acquisition. They are not competitive pressure.
 - Keyword search volumes, if quoted, are the DC figures in the digest or none at all.
 
-Pressure components score how hard competitors pushed this week, 0 to 100, using only
-signals present: social (organic posting), owned (web changes and email), paid (ads and
-paid search), search (organic positions). Use null for any component with no signals.
-0-25 calm, 26-50 active, 51-75 elevated, 76-90 high, 91-100 critical."""
+The digest's pressure section is computed by code and is final. Do not re-score it.
+It is CALIBRATED: 50 is a normal week for these competitors, 65 is about one usual
+swing above normal, 80 about two. It measures how unusual the week is, not how large a
+competitor is. While status is "calibrating" there is no score yet; say nothing about
+pressure beyond the events. When you mention it, name the driver and what moved."""
 
 ANALYST_SCHEMA = """{
   "summary": "<answers first: does anything competitors did change the client's plans? then what>",
-  "pressure_components": {"social": <0-100 or null>, "owned": <0-100 or null>,
-                          "paid": <0-100 or null>, "search": <0-100 or null>},
-  "pressure_driver": {"competitor": "<name or null>", "reason": "<under 25 words>"},
   "developments": [
     {
       "competitor": "<name>",
@@ -545,34 +542,17 @@ def enrich(dev: dict[str, Any], signals_by_id: dict[str, dict[str, Any]]) -> dic
     return dev
 
 
-def pressure(
-    components: dict[str, Any], digest: dict[str, Any]
-) -> tuple[int | None, dict[str, int | None], dict[str, float]]:
-    """Weighted composite, computed here. A component with no signals is null whatever
-    the model said, and its weight is shared out rather than scored as zero."""
-    has = {
-        "social": bool(digest["other_signals"]),
-        "owned": bool(digest["ranked_changes"]) or any(digest["not_surfaced"].values())
-                 or digest["signal_counts"].get("web_change", 0) > 0
-                 or digest["signal_counts"].get("email", 0) > 0,
-        "paid": bool(digest["paid"]),
-        "search": bool(digest["search"]),
-        "news": False,
+def pressure_for_digest(p: dict[str, Any]) -> dict[str, Any]:
+    """The part of the momentum result the Analyst sees: enough to explain, no more."""
+    def slim(r: dict[str, Any]) -> dict[str, Any]:
+        return {k: r.get(k) for k in ("status", "score", "trend", "metrics", "metric_z")} | {
+            "events": [{"kind": e["kind"], "signal_id": e["signal_id"], "note": e["note"]}
+                       for e in r.get("events") or []]}
+    return {
+        "market": slim(p["market"]),
+        "driver": p.get("driver"),
+        "competitors": [{"competitor": c["competitor"], **slim(c)} for c in p["competitors"]],
     }
-    comps: dict[str, int | None] = {}
-    for k in WEIGHTS:
-        v = components.get(k) if has[k] else None
-        try:
-            comps[k] = None if v is None else max(0, min(100, int(round(float(v)))))
-        except (TypeError, ValueError):
-            comps[k] = None
-    live = {k: w for k, w in WEIGHTS.items() if comps[k] is not None}
-    total = sum(live.values())
-    if not total:
-        return None, comps, {}
-    applied = {k: round(w / total, 3) for k, w in live.items()}
-    score = round(sum(comps[k] * w for k, w in live.items()) / total)
-    return int(score), comps, applied
 
 
 def synthesize(
@@ -581,13 +561,18 @@ def synthesize(
     digest: dict[str, Any],
     signals: list[dict[str, Any]],
     prior_score: int | None,
+    pressure: dict[str, Any],
     model: ModelFn,
 ) -> tuple[dict[str, Any], vb.Report]:
-    """Digest in, briefing row out. No database, so it runs end to end in tests."""
+    """Digest in, briefing row out. No database, so it runs end to end in tests.
+
+    pressure is momentum.score_week()'s result, computed before the model runs.
+    """
     profile = client.get("output_profile") or "operator"
     lo, hi = DEV_RANGE.get(profile, DEV_RANGE["operator"])
     by_id = {s["id"]: s for s in signals}
 
+    digest = dict(digest, pressure=pressure_for_digest(pressure))
     analysis = run_analyst(model, digest, profile)
     devs = order_developments(analysis.get("developments") or [], by_id, hi)
     devs = [enrich(d, by_id) for d in devs]
@@ -598,7 +583,7 @@ def synthesize(
         if i in recs:
             d["recommendation"] = recs[i]
 
-    score, comps, applied = pressure(analysis.get("pressure_components") or {}, digest)
+    score = pressure["market"]["score"]
     summary = str(analysis.get("summary") or "").strip()
 
     row = {
@@ -613,10 +598,13 @@ def synthesize(
             "model": MODEL,
             "generated_at": datetime.now(timezone.utc).isoformat(),
             "pressure": {
+                "method": "momentum-v1",
+                "status": pressure["market"]["status"],
                 "score": score,
-                "components": comps,
-                "weights_applied": applied,
-                "driver": analysis.get("pressure_driver"),
+                "trend": pressure["market"]["trend"],
+                "market": pressure["market"],
+                "competitors": pressure["competitors"],
+                "driver": pressure["driver"],
                 "prior_score": prior_score,
                 "delta": (score - prior_score) if (score is not None and prior_score is not None) else None,
             },
@@ -657,7 +645,7 @@ def _sections(s: dict[str, Any]) -> dict[str, Any]:
 
 def load(sb: Supa, slug: str, wk: date) -> dict[str, Any]:
     clients = sb.get("public", "clients", {
-        "slug": f"eq.{slug}", "select": "id,name,slug,brain,output_profile"})
+        "slug": f"eq.{slug}", "select": "id,name,slug,brain,output_profile,config"})
     if not clients:
         raise SystemExit(f"no client with slug {slug}")
     client = clients[0]
@@ -679,12 +667,55 @@ def load(sb: Supa, slug: str, wk: date) -> dict[str, Any]:
         "client_id": f"eq.{cid}", "week_of": f"lt.{wk.isoformat()}",
         "select": "pressure_score", "order": "week_of.desc", "limit": "1"})
     signals = fetch_week_signals(sb, cid, wk)
+    history_rows = sb.get("portal", "pressure_weekly", {
+        "client_id": f"eq.{cid}",
+        "week_of": f"gte.{(wk - timedelta(weeks=mo_lookback())).isoformat()}",
+        "and": f"(week_of.lt.{wk.isoformat()})",
+        "select": "competitor_id,week_of,metrics", "order": "week_of"})
+    history: dict[str | None, list[dict[str, float]]] = {}
+    for h in history_rows:
+        history.setdefault(h.get("competitor_id"), []).append(h.get("metrics") or {})
+    snapshots = sb.get("portal", "signals", {
+        "client_id": f"eq.{cid}", "week_of": f"eq.{wk.isoformat()}",
+        "signal_type": "eq.page_snapshot", "select": "id", "limit": "1"})
+    ran = {"email"}  # the inbound webhook runs continuously
+    if rollups:
+        ran.add("ads")
+    if snapshots:
+        ran.add("web")
+    if any(s["signal_type"] == "tracked_keyword_positions" for s in signals):
+        ran.add("search")
     return {
         "client": client, "competitors": competitors, "rollups": rollups,
         "prior_rollups": prior_rollups, "signals": signals,
         "email_channels": {c["competitor_id"] for c in email_ch},
         "prior_score": prior[0]["pressure_score"] if prior else None,
+        "history": history, "ran": ran,
+        "watch_terms": ((client.get("config") or {}).get("watch_terms") or []),
     }
+
+
+def mo_lookback() -> int:
+    from calibrate import LOOKBACK
+    return LOOKBACK
+
+
+def compute_pressure(ctx: dict[str, Any], wk: date) -> tuple[dict[str, Any], dict]:
+    per_comp = mo.week_metrics(ctx["signals"], ctx["competitors"], wk, ran=ctx["ran"],
+                               email_channels=ctx["email_channels"],
+                               watch_terms=ctx["watch_terms"])
+    return mo.score_week(per_comp, ctx["history"], ctx["competitors"]), per_comp
+
+
+def pressure_rows(client_id: str, wk: date, p: dict[str, Any]) -> list[dict[str, Any]]:
+    """One row per competitor plus the market row (competitor_id NULL)."""
+    def row(cid: str | None, r: dict[str, Any]) -> dict[str, Any]:
+        return {"client_id": client_id, "competitor_id": cid, "week_of": wk.isoformat(),
+                "metrics": r["metrics"], "metric_z": r.get("metric_z") or {},
+                "events": r.get("events") or [], "event_points": r.get("event_points") or 0,
+                "score": r["score"], "status": r["status"], "trend": r.get("trend"),
+                "method": "momentum-v1"}
+    return [row(None, p["market"])] + [row(c["competitor_id"], c) for c in p["competitors"]]
 
 
 def main() -> int:
@@ -713,9 +744,17 @@ def main() -> int:
           f"paid rows: {len(digest['paid'])} · search rows: {len(digest['search'])}")
     for line in digest["coverage"]:
         print(f"[synth] coverage: {line}")
+    pressure, _ = compute_pressure(ctx, wk)
+    m = pressure["market"]
+    print(f"[synth] pressure: market {m['status']} score={m['score']} trend={m['trend']} "
+          f"history={m['history_weeks']}w events={len(m['events'])} driver={pressure['driver']}")
+    for c in pressure["competitors"]:
+        print(f"[synth]   {c['competitor']:<10} {c['status']:<11} score={c['score']} "
+              f"events={[e['kind'] for e in c['events']]} metrics={c['metrics']}")
 
     if args.digest_only:
-        print(json.dumps(digest, indent=1, default=str))
+        print(json.dumps(dict(digest, pressure=pressure_for_digest(pressure)), indent=1,
+                         default=str))
         return 0
     if not os.environ.get("ANTHROPIC_API_KEY"):
         print("ANTHROPIC_API_KEY must be set", file=sys.stderr)
@@ -726,7 +765,8 @@ def main() -> int:
         return 1
 
     row, rep = synthesize(client=client, digest=digest, signals=ctx["signals"],
-                          prior_score=ctx["prior_score"], model=anthropic_model)
+                          prior_score=ctx["prior_score"], pressure=pressure,
+                          model=anthropic_model)
     row["published_at"] = datetime.now(timezone.utc).isoformat() if rep.ok else None
 
     print(f"[synth] pressure {row['pressure_score']} · {len(row['developments'])} developments")
@@ -736,6 +776,10 @@ def main() -> int:
         print("[synth] dry run, nothing written")
         return 0 if rep.ok else 1
 
+    # History first, and whatever the gate decides: a held week is still a week of
+    # competitor behaviour, and skipping it would leave a hole in every median.
+    sb.upsert("portal", "pressure_weekly", pressure_rows(client["id"], wk, pressure),
+              on_conflict="client_id,competitor_id,week_of")
     sb.upsert("portal", "briefings", [row], on_conflict="client_id,week_of")
     if rep.ok:
         print(f"[synth] PUBLISHED week of {wk}")

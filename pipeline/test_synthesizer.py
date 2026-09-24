@@ -12,6 +12,7 @@ import json
 import sys
 from datetime import date
 
+import momentum as mo
 import synthesizer as sy
 from week_window import in_window
 
@@ -97,8 +98,6 @@ def digest():
 GOOD_ANALYSIS = {
     "summary": "Movement cut a national price and Onelife ran a $0 enrollment offer. "
                "Neither is confirmed in DC yet, but both land in your pre-opening window.",
-    "pressure_components": {"social": 80, "owned": 70, "paid": 60, "search": 20, "news": 99},
-    "pressure_driver": {"competitor": "Onelife", "reason": "Largest ad volume and a live offer."},
     "developments": [
         # Deliberately returned in the WRONG order: code must reorder on collector rank.
         {"competitor": "VIDA", "headline": "VIDA added a new class at U Street",
@@ -190,23 +189,25 @@ def test_search_carries_directional():
     assert cl["keywords"][0]["position"] == 5
 
 
-def test_pressure():
-    d = digest()
-    score, comps, applied = sy.pressure({"social": 80, "owned": 70, "paid": 60, "search": 20,
-                                         "news": 99}, d)
-    assert comps["social"] is None, "no social signals: the model's 80 is discarded"
-    assert comps["news"] is None, "no news collector"
-    # owned 25, paid 20, search 15 → (70*25 + 60*20 + 20*15) / 60
-    assert score == round((70 * 25 + 60 * 20 + 20 * 15) / 60), score
-    assert abs(sum(applied.values()) - 1) < 0.01
-    assert sy.pressure({}, d)[0] is None
+def pressure():
+    per = mo.week_metrics(window(), COMPS, WK, ran={"ads", "web", "email", "search"},
+                          email_channels=EMAIL_CHANNELS, watch_terms=["tenleytown"])
+    return mo.score_week(per, {}, COMPS)
+
+
+def test_pressure_is_code_not_model():
+    p = pressure()
+    assert p["market"]["status"] == "calibrating" and p["market"]["score"] is None
+    one = next(c for c in p["competitors"] if c["competitor"] == "Onelife")
+    assert {e["kind"] for e in one["events"]} >= {"offer", "watch_term"}
+    assert p["driver"]["competitor"] == "Onelife"
 
 
 def test_end_to_end_publishes():
     d = digest()
     model, calls = fake_model(GOOD_ANALYSIS, GOOD_STRATEGY)
     row, rep = sy.synthesize(client=CLIENT, digest=d, signals=window(), prior_score=40,
-                             model=model)
+                             pressure=pressure(), model=model)
     assert rep.ok, rep.render()
     heads = [x["competitor"] for x in row["developments"]]
     assert heads[-1] == "VIDA", heads
@@ -218,7 +219,9 @@ def test_end_to_end_publishes():
     fr = row["full_report"]
     assert set(fr["sections"]) == {"search", "paid", "social", "owned"}
     assert "junk" not in fr["sections"]["paid"] and fr["sections"]["owned"]["website_changes"] == []
-    assert fr["pressure"]["delta"] == row["pressure_score"] - 40
+    assert row["pressure_score"] is None and fr["pressure"]["status"] == "calibrating"
+    assert fr["pressure"]["delta"] is None
+    assert fr["pressure"]["driver"]["competitor"] == "Onelife"
     assert fr["validation"]["ok"] is True
     assert "OUTPUT PROFILE: EXECUTIVE" in calls[0] and "OUTPUT PROFILE: EXECUTIVE" in calls[1]
 
@@ -228,7 +231,7 @@ def test_fabricated_id_holds():
     bad["developments"][1]["signal_ids"] = ["e1", "not-a-real-id"]
     model, _ = fake_model(bad, GOOD_STRATEGY)
     _, rep = sy.synthesize(client=CLIENT, digest=digest(), signals=window(), prior_score=None,
-                           model=model)
+                           pressure=pressure(), model=model)
     assert not rep.ok and any("not collected this week" in f for f in rep.failures)
 
 
@@ -237,7 +240,7 @@ def test_cannibalisation_holds():
     leak["recommendations"][0]["recommendation"] = "Watch Eckington cannibalisation."
     model, _ = fake_model(GOOD_ANALYSIS, leak)
     _, rep = sy.synthesize(client=CLIENT, digest=digest(), signals=window(), prior_score=None,
-                           model=model)
+                           pressure=pressure(), model=model)
     assert not rep.ok and any("out of writing" in f for f in rep.failures)
 
 
@@ -249,7 +252,7 @@ def test_ceiling_cuts_count_not_words():
     many["developments"] += [extra, dict(extra), dict(extra)]
     model, _ = fake_model(many, GOOD_STRATEGY)
     row, _ = sy.synthesize(client=CLIENT, digest=digest(), signals=window(), prior_score=None,
-                           model=model)
+                           pressure=pressure(), model=model)
     assert len(row["developments"]) == 4
     assert [x["competitor"] for x in row["developments"]][2] == "VIDA", \
         "ranked developments come before unranked ones"
