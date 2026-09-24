@@ -497,6 +497,12 @@ How to read the digest:
   shows that comparison. The pressure score is the comparison with a competitor's own
   normal: write "furthest above its own normal", never "its largest push".
 - A number that appears in two fields of one development is the same number in both.
+- Directional figures (Semrush keyword counts, traffic estimates) are never compared
+  across competitors: no highest, lowest, most, leads or ranks. Report each alone.
+- Say where something ran only from the signals that show it. An award in social posts
+  is "posted on social", never "across paid and social" unless an ad carries it too.
+- Name a competitor's location in full, never a short form a DC reader could take for a
+  neighbourhood: a /columbia/ landing page is "Columbia, MD".
 - Cite every signal a claim rests on. A claim from a social post cites that post.
 - Keyword search volumes, if quoted, are the DC figures in the digest or none at all.
 - social: account_scope "local" is a location account and its posts are ground-level
@@ -509,7 +515,15 @@ The digest's pressure section is computed by code and is final. Do not re-score 
 It is CALIBRATED: 50 is a normal week for these competitors, 65 is about one usual
 swing above normal, 80 about two. It measures how unusual the week is, not how large a
 competitor is. While status is "calibrating" there is no score yet; say nothing about
-pressure beyond the events. When you mention it, name the driver and what moved."""
+pressure beyond the events. When you mention it, name the driver and what moved.
+Each competitor and the market also carry a score per channel in components, with its
+basis. basis "own": say "above its own normal". basis "set": the competitor has too
+little history yet, so it is compared with the rest of the set this week; say "above
+the rest of the set this week", never "above its own normal". basis "blend": say
+"above normal". Paid compares new launches, never the number of ads running.
+The score measures only the metrics in scored_on. Credit a score to those metrics and
+nothing else: if scored_on is ["social_posts"], the score is about organic posting, and
+ads, however many launched, did not move it."""
 
 ANALYST_SCHEMA = """{
   "summary": "<answers first: does anything competitors did change the client's plans? then what. aim for 60 words, hard limit 75>",
@@ -755,10 +769,43 @@ def enrich(dev: dict[str, Any], signals_by_id: dict[str, dict[str, Any]]) -> dic
     return dev
 
 
+COMPONENT_NAMES = {"paid": "paid", "search": "search", "web": "website",
+                   "email": "email", "social": "organic social"}
+
+
+def pressure_coverage(p: dict[str, Any]) -> list[str]:
+    """Say, from code, what each score is compared against this week.
+
+    Every channel is scored from its first week. Until a competitor has four weeks of
+    its own history on a channel, that channel is compared with the rest of the set in
+    the same week, and the reader should know which comparison a number rests on.
+    """
+    set_based: set[str] = set()
+    for c in p.get("competitors") or []:
+        for name, comp in (c.get("components") or {}).items():
+            if comp.get("basis") in ("set", "blend"):
+                set_based.add(name)
+    if not set_based:
+        return []
+    names = ", ".join(COMPONENT_NAMES.get(x, x) for x in sorted(set_based))
+    return [f"{names[0].upper() + names[1:]} scores compare each competitor with the rest of "
+            f"the set this week. Each moves to that competitor's own normal as four weeks "
+            f"of its history build up. Paid compares new launches only, never how many "
+            f"ads a brand runs, so size alone never reads as pressure."]
+
+
 def pressure_for_digest(p: dict[str, Any]) -> dict[str, Any]:
     """The part of the momentum result the Analyst sees: enough to explain, no more."""
     def slim(r: dict[str, Any]) -> dict[str, Any]:
-        return {k: r.get(k) for k in ("status", "score", "trend", "metrics", "metric_z")} | {
+        z = r.get("metric_z") or {}
+        return {k: r.get(k) for k in ("status", "score", "trend", "metrics")} | {
+            # The only metrics this score measures. A metric with too little history
+            # (fewer than four weeks) is shown in metrics but moves nothing.
+            "scored_on": sorted(k for k, v in z.items() if v is not None),
+            # Per channel: a 0-100 score and what it is compared against. "own" is the
+            # competitor's own normal, "set" the rest of the set this week, "blend" both.
+            "components": {k: v for k, v in (r.get("components") or {}).items()
+                           if v.get("score") is not None},
             "events": [{"kind": e["kind"], "signal_id": e["signal_id"], "note": e["note"]}
                        for e in r.get("events") or []]}
     return {
@@ -786,7 +833,8 @@ def synthesize(
     by_id = {s["id"]: s for s in signals}
 
     never_terms = list((client.get("config") or {}).get("never_in_writing") or [])
-    digest = dict(digest, pressure=pressure_for_digest(pressure))
+    digest = dict(digest, pressure=pressure_for_digest(pressure),
+                  coverage=digest["coverage"] + pressure_coverage(pressure))
     aliased, real = alias_digest(digest)
     ref_of = {i: r for r, i in real.items()}
 
@@ -878,7 +926,7 @@ def _assemble(analysis: dict[str, Any], *, client: dict[str, Any], digest: dict[
             "model": MODEL,
             "generated_at": datetime.now(timezone.utc).isoformat(),
             "pressure": {
-                "method": "momentum-v1",
+                "method": "momentum-v2",
                 "status": pressure["market"]["status"],
                 "score": score,
                 "trend": pressure["market"]["trend"],
@@ -1047,7 +1095,8 @@ def pressure_rows(client_id: str, wk: date, p: dict[str, Any]) -> list[dict[str,
                 "metrics": r["metrics"], "metric_z": r.get("metric_z") or {},
                 "events": r.get("events") or [], "event_points": r.get("event_points") or 0,
                 "score": r["score"], "status": r["status"], "trend": r.get("trend"),
-                "method": "momentum-v1"}
+                "components": r.get("components") or {}, "basis": r.get("basis") or {},
+                "method": "momentum-v2"}
     return [row(None, p["market"])] + [row(c["competitor_id"], c) for c in p["competitors"]]
 
 

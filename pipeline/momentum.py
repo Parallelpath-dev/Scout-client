@@ -51,6 +51,7 @@ Pure: no network, no database.
 
 from __future__ import annotations
 
+import math
 import re
 
 from datetime import date, datetime, timedelta, timezone
@@ -270,22 +271,90 @@ def market_metrics(per_comp: dict[str, dict[str, Any]]) -> dict[str, float]:
     return tot
 
 
+COMPONENTS = {
+    "paid": ("ads_active", "ads_launched"),
+    "search": ("search",),
+    "web": ("web",),
+    "email": ("email",),
+    "social": ("social_posts",),
+}
+LOG_FLOOR = 0.25          # about a 28% difference, on the log scale
+FULL_OWN = 4              # weeks of own history at which the set drops out entirely
+
+
+# Compared against the set only on what they did this week, never on how big they are.
+# A count of running ads is mostly the size of the advertiser (Onelife: 266 against a
+# set median near 22), so it joins through the competitor's own history from week 2.
+NO_SET = {"ads_active"}
+
+
+def _set_z(k: str, v: float, peers: list[float]) -> float | None:
+    """How far this competitor sits from the rest of the set this week.
+
+    On a log scale: counts across a set are skewed, and on the raw scale one launch
+    against a set median of two reads like a surge. On the log scale 11 launches
+    against a median of two reads about two usual swings up, not off the chart.
+    """
+    if len(peers) < 2 or k in NO_SET:
+        return None
+    return robust_z(math.log1p(v), [math.log1p(x) for x in peers],
+                    abs_floor=LOG_FLOOR, min_history=2)
+
+
+def _blend(own: float | None, ref: float | None, n_own: int) -> tuple[float | None, str]:
+    w = min(n_own, FULL_OWN) / FULL_OWN if own is not None else 0.0
+    if ref is None:
+        return (own, "own") if own is not None and n_own >= FULL_OWN else (
+            (own * w if own is not None and w else None), "own")
+    if w >= 1.0:
+        return own, "own"
+    if w == 0.0:
+        return ref, "set"
+    return w * own + (1 - w) * ref, "blend"
+
+
 def score_row(
     metrics: dict[str, float],
     history: list[dict[str, float]],
     events: list[dict[str, Any]],
+    reference: dict[str, float | None] | None = None,
 ) -> dict[str, Any]:
-    """Calibrate one row (a competitor, or the market) against its own history.
+    """Score one row (a competitor, or the market).
+
+    Every metric has a z from its first week. Against its own history once that exists;
+    before that against `reference`, the z it has relative to the set this week. The two
+    are blended by how many weeks of own history there are, so there is no cliff:
+    week 1 is all set, week 5 is all own.
 
     history: that row's metrics for previous weeks, oldest first, this week excluded.
     """
+    reference = reference or {}
     zs: dict[str, float | None] = {}
+    basis: dict[str, str] = {}
     for k, v in metrics.items():
-        zs[k] = robust_z(v, [h.get(k) for h in history], **FLOORS.get(k, {}))
+        h = [x.get(k) for x in history]
+        n_own = sum(1 for x in h if x is not None)
+        own = robust_z(v, h, min_history=1, **FLOORS.get(k, {})) if n_own else None
+        zs[k], basis[k] = _blend(own, reference.get(k), n_own)
     live = {k: METRIC_WEIGHT.get(k, 10) for k, z in zs.items() if z is not None}
     bonus = min(EVENT_CAP, sum(e["points"] for e in events))
+
+    components = {}
+    for name, keys in COMPONENTS.items():
+        ks = [k for k in keys if zs.get(k) is not None]
+        if ks:
+            cz = sum(zs[k] * METRIC_WEIGHT.get(k, 10) for k in ks) / sum(
+                METRIC_WEIGHT.get(k, 10) for k in ks)
+            b = {basis[k] for k in ks}
+            components[name] = {"score": to_score(cz), "basis": b.pop() if len(b) == 1 else "blend"}
+        elif any(k in metrics for k in keys):
+            components[name] = {"score": None, "basis": "no comparison"}
+        else:
+            components[name] = {"score": None, "basis": "not collected"}
+
     if not live:
         return {"status": "calibrating", "score": None, "z": None, "metric_z": zs,
+                "basis": basis, "components": components,
                 "event_points": bonus, "trend": None, "history_weeks": len(history)}
     z = sum(zs[k] * w for k, w in live.items()) / sum(live.values())
     # Trend on the combined level, so it survives the ramp being absorbed as normal.
@@ -297,6 +366,7 @@ def score_row(
     tr = trend([level(h) for h in complete] + [level(metrics)])
     return {"status": "scored", "score": to_score(z, bonus), "z": round(z, 3),
             "metric_z": {k: (round(v, 3) if v is not None else None) for k, v in zs.items()},
+            "basis": basis, "components": components,
             "event_points": bonus, "trend": tr, "history_weeks": len(history)}
 
 
@@ -307,16 +377,31 @@ def score_week(
 ) -> dict[str, Any]:
     """Score every competitor and the market. history keys: competitor id, None = market."""
     names = {c["id"]: c["name"] for c in competitors}
+
+    def ref_for(cid: str) -> dict[str, float | None]:
+        out = {}
+        for k, v in per_comp[cid]["metrics"].items():
+            peers = [r["metrics"][k] for c, r in per_comp.items()
+                     if c != cid and r["metrics"].get(k) is not None]
+            out[k] = _set_z(k, v, peers)
+        return out
+
     comps = []
     all_events = []
     for cid, row in per_comp.items():
-        r = score_row(row["metrics"], history.get(cid, []), row["events"])
+        r = score_row(row["metrics"], history.get(cid, []), row["events"], ref_for(cid))
         comps.append({"competitor_id": cid, "competitor": names.get(cid), "metrics": row["metrics"],
                       "events": row["events"], **r})
         all_events += row["events"]
     mkt = market_metrics(per_comp)
+    # The market has no peers. Before it has its own history, a metric's market z is
+    # the average of the competitors' z on it: the set running hot or cold as a whole.
+    mref: dict[str, float | None] = {}
+    for k in mkt:
+        vals = [c["metric_z"].get(k) for c in comps if c["metric_z"].get(k) is not None]
+        mref[k] = sum(vals) / len(vals) if vals else None
     market = {"metrics": mkt, "events": all_events,
-              **score_row(mkt, history.get(None, []), all_events)}
+              **score_row(mkt, history.get(None, []), all_events, mref)}
 
     # The driver is the competitor furthest above their own normal, events included.
     # While calibrating, the one with the most event points; with neither, nobody.
@@ -329,8 +414,12 @@ def score_week(
     driver = None
     if top:
         why = [e["kind"] for e in top["events"]]
+        bases = set((top.get("basis") or {}).values())
+        where = ("furthest above their own normal" if bases == {"own"} else
+                 "furthest above the rest of the set this week" if bases == {"set"} else
+                 "furthest above normal: their own history where it exists, "
+                 "the rest of the set where it does not")
         driver = {"competitor": top["competitor"], "score": top["score"],
-                  "reason": ("events: " + ", ".join(sorted(set(why)))) if why
-                            else "furthest above their own normal"}
+                  "reason": ("events: " + ", ".join(sorted(set(why)))) if why else where}
     return {"market": market, "competitors": sorted(comps, key=lambda c: c["competitor"] or ""),
             "driver": driver}
