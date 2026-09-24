@@ -79,7 +79,9 @@ def test_payloads_match_actor_schemas():
     yt = sp.payload("youtube", [CH["yt"]], WK)
     assert yt["startUrls"][0]["url"].endswith("/channel/UCykbSnimHBWsvq-ndDkCzpQ/videos")
     x = sp.payload("x", [CH["x"]], WK)
-    assert x["twitterHandles"] == ["VIDAFitnessDC"] and x["end"] == "2026-09-21"
+    assert x["searchTerms"] == ["from:VIDAFitnessDC since:2026-09-14 until:2026-09-21"], \
+        "start/end are ignored for twitterHandles; the backfill paid for 650 May tweets"
+    assert sp.payload("tiktok", [CH["tt"]], WK)["resultsPerPage"] == 20
 
 
 # ── normalizers: the internal tool's follower bugs ──────────────────────────
@@ -157,9 +159,32 @@ def test_cap_is_a_floor_not_a_count():
     assert prof[0]["data"]["capped"] is True, "internal reported the limit (20) as a count"
     # TikTok always returns LIMIT; if the oldest is before the window, nothing was cut.
     tt = [{"id": str(i), "createTimeISO": IN if i < 5 else BEFORE, "authorMeta": {"name": "onelifefit"}}
-          for i in range(sp.LIMIT)]
+          for i in range(sp.limit_for(1, "tiktok"))]
     _, prof = rows({"tt": tt})
     assert prof[0]["data"]["capped"] is False and prof[0]["data"]["posts_in_week"] == 5
+
+
+def test_age_restricted_profile_is_unknown_not_zero():
+    item = {"inputUrl": "https://www.instagram.com/ymcabowen/", "username": "ymcabowen",
+            "private": False, "error": "Restricted profile", "isRestrictedProfile": True,
+            "restrictionReason": "You must be 13 years old or over to see this profile"}
+    ymca = sp.Channel("ch-yig", "c-ymca", "instagram", "local", "ymcabowen")
+    assert "13 years old" in sp.item_error(item)
+    assert sp.match_error(item, [CH["ig"], ymca]) is ymca
+    assert sp.NORMALIZE["instagram"](item) is None
+    calls = []
+    def fake(token, actor, payload, **k):
+        calls.append(payload.get("resultsType"))
+        return [item] if payload.get("resultsType") == "posts" else []
+    real = cs.apify.run_actor
+    cs.apify.run_actor = fake
+    try:
+        posts, collected, _, _ = cs.collect("t", [CH["ig"], ymca], WK)
+    finally:
+        cs.apify.run_actor = real
+    assert ymca not in collected, "an unreadable channel must get no profile row"
+    assert CH["ig"] in collected, "a readable channel beside it still counts, as a real zero"
+    assert sp.item_error({"noResults": True, "error": "x"}) is None, "X noResults is a real zero"
 
 
 def test_zero_posts_still_writes_a_profile():

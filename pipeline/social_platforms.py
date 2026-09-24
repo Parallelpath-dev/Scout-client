@@ -35,9 +35,14 @@ from typing import Any, Callable
 
 LIMIT = 50  # posts per channel per week. A branch posting more than this is capped.
 
+# TikTok has no free date filter, so every run pays for its full limit even from a
+# dormant account (Onelife's returned its whole 388-video history on the backfill).
+# Nobody in this set posts twenty TikToks a week; if one does, `capped` says so.
+PLATFORM_LIMIT = {"tiktok": 20}
 
-def limit_for(weeks: int) -> int:
-    return LIMIT * max(1, weeks)
+
+def limit_for(weeks: int, platform: str | None = None) -> int:
+    return PLATFORM_LIMIT.get(platform or "", LIMIT) * max(1, weeks)
 
 ACTORS = {
     "instagram": "apify/instagram-scraper",
@@ -158,7 +163,7 @@ def _norm(h: str | None) -> str:
 def payload(platform: str, channels: list[Channel], wk: date, weeks: int = 1) -> dict[str, Any]:
     since, until = window(wk, weeks)
     d = since.date().isoformat()
-    LIMIT = limit_for(weeks)
+    LIMIT = limit_for(weeks, platform)
     if platform == "instagram":
         return {"directUrls": [c.page_url for c in channels], "resultsType": "posts",
                 "resultsLimit": LIMIT, "onlyPostsNewerThan": d, "addParentData": True}
@@ -176,9 +181,10 @@ def payload(platform: str, channels: list[Channel], wk: date, weeks: int = 1) ->
                 "maxResults": LIMIT, "maxResultsShorts": LIMIT, "maxResultStreams": 0,
                 "oldestPostDate": d, "sortVideosBy": "NEWEST"}
     if platform == "x":
-        return {"twitterHandles": [c.handle for c in channels],
-                "maxItems": LIMIT * len(channels), "sort": "Latest",
-                "start": d, "end": until.date().isoformat()}
+        # start/end are ignored for twitterHandles: the backfill paid for 650 tweets from
+        # an account whose last post was in May. X's own search operators are honoured.
+        q = [f"from:{c.handle} since:{d} until:{until.date().isoformat()}" for c in channels]
+        return {"searchTerms": q, "maxItems": LIMIT * len(channels), "sort": "Latest"}
     raise ValueError(platform)
 
 
@@ -287,6 +293,31 @@ def match(post: Post, channels: list[Channel]) -> Channel | None:
     if len(channels) == 1:
         return channels[0]
     return None
+
+
+def item_error(i: dict[str, Any]) -> str | None:
+    """An actor's own "could not read this" item. Not a post, and not a zero: the
+    channel was not collected. Instagram age-gates some accounts (YMCA Anthony Bowen:
+    "You must be 13 years old or over to see this profile"), and dropping that item
+    silently recorded 13 weeks of "posted nothing" for an account posting weekly."""
+    if i.get("isRestrictedProfile"):
+        return str(i.get("restrictionReason") or i.get("error") or "restricted profile")
+    if i.get("error") and not i.get("noResults"):
+        return str(i.get("errorDescription") or i.get("error"))
+    return None
+
+
+def match_error(i: dict[str, Any], channels: list[Channel]) -> Channel | None:
+    """Which channel an error item is about: username or the echoed input URL."""
+    page = i.get("pageName") if isinstance(i.get("pageName"), str) else None
+    user = _norm(i.get("username") or page)
+    inp = _norm(i.get("inputUrl") or i.get("url") or i.get("input"))
+    for c in channels:
+        for k in (_norm(c.handle), _norm(c.external_id)):
+            if k and (k == user or inp.endswith("/" + k) or f"/{k}/" in inp + "/"
+                      or inp.endswith("@" + k)):
+                return c
+    return channels[0] if len(channels) == 1 else None
 
 
 def followers_from_details(items: list[dict[str, Any]], channels: list[Channel]) -> dict[str, int]:

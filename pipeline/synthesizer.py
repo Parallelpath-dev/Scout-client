@@ -133,6 +133,7 @@ def build_digest(
     client_name: str,
     wk: date,
     email_live: bool = True,
+    unreadable: list[str] | None = None,
 ) -> dict[str, Any]:
     """Everything the Analyst is allowed to see, and nothing it is not.
 
@@ -357,6 +358,8 @@ def build_digest(
                          if x["count_is_floor"]})
         if floors:
             coverage.append(f"Post counts are a floor for {', '.join(floors)}.")
+    for u in unreadable or []:
+        coverage.append(u)
     single = sorted(c["name"] for c in competitors if c.get("single_market"))
     if single:
         coverage.append(f"{', '.join(single)} operate only in this market, so all of their "
@@ -750,6 +753,19 @@ def load(sb: Supa, slug: str, wk: date) -> dict[str, Any]:
     social_ch = sb.get("portal", "channels", {
         "competitor_id": f"in.({comp_ids})", "purpose": "eq.organic_social",
         "active": "eq.true", "select": "id,competitor_id"})
+    # Channels retired because the platform will not show them to a logged-out reader.
+    # Recorded as `UNREADABLE: <reason>` in notes, and said out loud in coverage, so a
+    # missing channel is a stated gap rather than a silent one.
+    retired = sb.get("portal", "channels", {
+        "competitor_id": f"in.({comp_ids})", "purpose": "eq.organic_social",
+        "active": "eq.false", "notes": "like.UNREADABLE*",
+        "select": "competitor_id,platform,location_label,notes"})
+    cname = {c["id"]: c["name"] for c in competitors}
+    unreadable = [
+        f"{cname.get(r['competitor_id'], '?')} {r.get('location_label') or ''} "
+        f"{r['platform'].title()} cannot be read: "
+        f"{r['notes'].split(':', 1)[1].strip().rstrip('.')}.".replace("  ", " ")
+        for r in retired]
     rollups = sb.get("portal", "ad_geo_weekly", {
         "client_id": f"eq.{cid}", "week_of": f"eq.{wk.isoformat()}", "select": "*"})
     prior_rollups = sb.get("portal", "ad_geo_weekly", {
@@ -793,7 +809,7 @@ def load(sb: Supa, slug: str, wk: date) -> dict[str, Any]:
         "prior_rollups": prior_rollups, "signals": signals,
         "email_channels": {c["competitor_id"] for c in email_ch},
         "prior_score": prior[0]["pressure_score"] if prior else None,
-        "history": history, "ran": ran,
+        "history": history, "ran": ran, "unreadable": unreadable,
         "social_channels": {c: {x["id"] for x in social_ch if x["competitor_id"] == c}
                             for c in {x["competitor_id"] for x in social_ch}},
         "watch_terms": ((client.get("config") or {}).get("watch_terms") or []),
@@ -861,7 +877,7 @@ def main() -> int:
 
     digest = build_digest(ctx["signals"], ctx["competitors"], ctx["rollups"],
                           ctx["prior_rollups"], ctx["email_channels"], client["name"], wk,
-                          email_live="email" in ctx["ran"])
+                          email_live="email" in ctx["ran"], unreadable=ctx.get("unreadable"))
     print(f"[synth] {client['name']} · week of {wk} · profile={client.get('output_profile')}")
     print(f"[synth] signals: {json.dumps(digest['signal_counts'])}")
     print(f"[synth] ranked changes: {len(digest['ranked_changes'])} · "
