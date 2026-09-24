@@ -414,7 +414,10 @@ Hard rules:
    introduce a fact from memory, including facts about these brands you believe are true.
 2. Every development and every section item cites the signal_id values it rests on,
    copied exactly from the digest. Never invent or alter an id.
-3. Respond with one JSON object matching the schema. No prose outside it, no markdown.
+3. A section with nothing to cite is an empty list. Never write an item to say there is
+   no data, monitoring had not started, or something was not visible: code already tells
+   the reader what we could not see, in coverage.
+4. Respond with one JSON object matching the schema. No prose outside it, no markdown.
 
 How to read the digest:
 - ranked_changes is already in priority order, set by rules that put materiality ahead
@@ -701,6 +704,7 @@ def synthesize(
 
     score = pressure["market"]["score"]
     summary = str(analysis.get("summary") or "").strip()
+    sections, uncited = _sections(analysis.get("sections") or {})
 
     row = {
         "client_id": client["id"],
@@ -724,14 +728,13 @@ def synthesize(
                 "prior_score": prior_score,
                 "delta": (score - prior_score) if (score is not None and prior_score is not None) else None,
             },
-            "sections": _sections(analysis.get("sections") or {}),
+            "sections": sections,
             "coverage": digest["coverage"],
         },
     }
 
     never = vb.NEVER_IN_WRITING + vb.terms_to_patterns(
         (client.get("config") or {}).get("never_in_writing"))
-    sections = row["full_report"]["sections"]
     rep = vb.validate({"summary": summary, "developments": devs, "sections": sections},
                       digest_signal_ids(digest), profile, never_in_writing=never)
     row["full_report"]["validation"] = {
@@ -740,25 +743,43 @@ def synthesize(
     for d in suppressed:
         row["full_report"]["validation"]["warnings"].append(
             f"suppressed single-signal development: {str(d.get('headline'))[:80]}")
+    for where, x in uncited:
+        row["full_report"]["validation"]["warnings"].append(
+            f"dropped uncited {where} item: {str(x.get('observation') or x.get('message'))[:80]}")
     if len(devs) < lo:
         row["full_report"]["validation"]["warnings"].append(
             f"only {len(devs)} development(s); the summary must say the week was quiet")
     return row, rep
 
 
-def _sections(s: dict[str, Any]) -> dict[str, Any]:
-    """Keep exactly the promised keys per tab, so the page can rely on them."""
+def _sections(s: dict[str, Any]) -> tuple[dict[str, Any], list[tuple[str, dict]]]:
+    """Keep exactly the promised keys per tab, so the page can rely on them.
+
+    An item citing no signal is a coverage note written as a finding ("email monitoring
+    had not started"). Coverage already says it, from code, so the item is dropped and
+    logged rather than holding the whole week at the gate. An item citing an id that is
+    not in the digest is kept: that is fabrication, and the gate must see it.
+    """
     shape = {
         "search": ("keyword_movement", "demand_shifts"),
         "paid": ("live_ad_creative", "spend_signals"),
         "social": ("audience_cadence", "content_themes"),
         "owned": ("website_changes", "email_programs"),
     }
-    out = {}
+    out: dict[str, Any] = {}
+    dropped: list[tuple[str, dict]] = []
     for tab, keys in shape.items():
         src = s.get(tab) if isinstance(s.get(tab), dict) else {}
-        out[tab] = {k: [x for x in (src.get(k) or []) if isinstance(x, dict)] for k in keys}
-    return out
+        out[tab] = {}
+        for k in keys:
+            keep = []
+            for x in src.get(k) or []:
+                if not isinstance(x, dict):
+                    continue
+                ids = [i for i in (x.get("signal_ids") or []) if isinstance(i, str) and i]
+                (keep.append(x) if ids else dropped.append((f"{tab}.{k}", x)))
+            out[tab][k] = keep
+    return out, dropped
 
 
 # ── database ─────────────────────────────────────────────────────────────────
