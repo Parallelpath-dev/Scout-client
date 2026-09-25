@@ -134,3 +134,17 @@ class Supa:
         if r.status_code >= 400:
             raise RuntimeError(f"{table} patch failed {r.status_code}: {r.text[:500]}")
         return 1
+
+
+def only(competitors: list[dict], name: str | None) -> list[dict]:
+    """Narrow a collector to one competitor by name, case-insensitive, so one brand (the
+    client's own benchmark row, say) can be collected or backfilled without paying to
+    re-collect everyone. Writes are upserts per competitor, so the others' rows for the
+    week stay as they were. An unknown name is an error, never a silent empty run."""
+    if not name:
+        return competitors
+    hit = [c for c in competitors if c["name"].strip().lower() == name.strip().lower()]
+    if not hit:
+        raise SystemExit(f"no active competitor named {name!r}; have: "
+                         + ", ".join(sorted(c["name"] for c in competitors)))
+    return hit

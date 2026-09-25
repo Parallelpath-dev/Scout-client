@@ -241,6 +241,24 @@ def test_launches_count_messages_not_ids():
     assert m["ads_launched"] == 4.0, "20 duplicates of one message plus 3 others is 4 messages"
 
 
+def test_location_page_ads_count_in_full():
+    s = [{"id": "x", "signal_type": "ad_active", "competitor_id": "nat", "geo_relevance": "none",
+          "source_scope": "local", "data": {"start_date": "2026-01-01"}}]
+    assert metrics(s)["nat"]["metrics"]["ads_active"] == 1.0, "a location page is local"
+
+
+def test_benchmark_is_scored_beside_never_among():
+    per = {"big": {"metrics": {"ads_launched": 1.0}, "events": []},
+           "nat": {"metrics": {"ads_launched": 2.0}, "events": []},
+           "loc": {"metrics": {"ads_launched": 1.5}, "events": []}}
+    before = mo.score_week(per, {}, COMPS)
+    b = mo.score_benchmark({"metrics": {"ads_launched": 9.0}, "events": []}, [], per)
+    after = mo.score_week(per, {}, COMPS)
+    assert before == after, "scoring the client changes nothing about the competitors"
+    assert b["basis"]["ads_launched"] == "set" and b["components"]["paid"]["score"] > 70
+    assert b["event_points"] == 0
+
+
 def main() -> int:
     tests = [v for k, v in sorted(globals().items()) if k.startswith("test_")]
     failed = 0

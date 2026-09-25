@@ -77,7 +77,7 @@ import requests
 
 import apify
 from geo import GeoClassifier, campaign_scope_hint, extract_ad_fields, is_recruitment
-from supa import Supa
+from supa import Supa, only
 
 ACTOR = "apify~facebook-ads-scraper"
 
@@ -202,7 +202,7 @@ def flatten(items: Iterable[dict[str, Any]]) -> list[dict[str, Any]]:
 def build_rows(
     ads: list[dict[str, Any]],
     competitors: list[dict[str, Any]],
-    channels_by_comp: dict[str, dict[str, Any]],
+    channels_by_page: dict[str, dict[str, Any]],
     client_id: str,
     clf: GeoClassifier,
     totals_by_comp: dict[str, int] | None = None,
@@ -215,11 +215,12 @@ def build_rows(
     previously stored under a column named `total_active`.
     """
     totals_by_comp = totals_by_comp or {}
-    by_page: dict[str, dict[str, Any]] = {}
-    for c in competitors:
-        ch = channels_by_comp.get(c["id"])
-        if ch and ch.get("external_id"):
-            by_page[str(ch["external_id"])] = c
+    comp_by_id = {c["id"]: c for c in competitors}
+    # A brand can publish from more than one page: Bouldering Project runs ads from its
+    # corporate page and its DC location page. Every page maps back to its brand.
+    by_page: dict[str, dict[str, Any]] = {
+        pid: comp_by_id[ch["competitor_id"]]
+        for pid, ch in channels_by_page.items() if ch.get("competitor_id") in comp_by_id}
 
     wk = week_of()
     collected_at = datetime.now(timezone.utc).isoformat()
@@ -261,10 +262,11 @@ def build_rows(
             {
                 "client_id": client_id,
                 "competitor_id": comp["id"],
-                "channel_id": (channels_by_comp.get(comp["id"]) or {}).get("id"),
-                # Every ad in this set is published from the national page. This is an
-                # observation from the 11 Sep verification, not an assumption.
-                "source_scope": "national",
+                "channel_id": (channels_by_page.get(pid or "") or {}).get("id"),
+                # The page's own scope. Every competitor ad so far comes from a national
+                # page (verified 11 Sep); a location page, like Bouldering Project's DC
+                # page, is local whatever the copy says.
+                "source_scope": (channels_by_page.get(pid or "") or {}).get("scope") or "national",
                 "geo_relevance": verdict.relevance,
                 "geo_evidence": verdict.evidence,
                 "signal_type": "ad_active",
@@ -330,7 +332,8 @@ def build_rows(
     for cid, counts in tally.items():
         sampled = counts["total_active"]
         available = totals_by_comp.get(cid)
-        cap = (channels_by_comp.get(cid) or {}).get("max_ads")
+        caps = [ch.get("max_ads") for ch in channels_by_page.values() if ch.get("competitor_id") == cid]
+        cap = max((c for c in caps if c), default=None) if any(caps) else None
 
         # How we know we got everything, without the library telling us.
         #
@@ -397,6 +400,7 @@ def main() -> int:
     ap.add_argument("--week", help="ISO date inside the target week. Defaults to this week.")
     ap.add_argument("--from-file", help="path for --source file")
     ap.add_argument("--save-raw", help="write the source payload to this path")
+    ap.add_argument("--competitor", help="collect this one competitor only, by name")
     args = ap.parse_args()
 
     supa_url = os.environ.get("SUPABASE_URL")
@@ -434,20 +438,21 @@ def main() -> int:
             "select": "id,competitor_id,external_id,scope,max_ads",
         },
     )
+    competitors = only(competitors, args.competitor)
     comp_ids = {c["id"] for c in competitors}
-    channels_by_comp = {
-        ch["competitor_id"]: ch for ch in channels if ch["competitor_id"] in comp_ids
+    channels_by_page = {
+        str(ch["external_id"]): ch for ch in channels
+        if ch["competitor_id"] in comp_ids and ch.get("external_id")
     }
+    with_pages = {ch["competitor_id"] for ch in channels_by_page.values()}
 
-    missing = [c["name"] for c in competitors if c["id"] not in channels_by_comp]
+    missing = [c["name"] for c in competitors if c["id"] not in with_pages]
     if missing:
         # Loud, because a competitor with no ads channel silently reports zero ads forever
         # and a zero looks like a finding rather than a gap.
         print(f"  WARNING no facebook/paid_ads channel for: {', '.join(missing)}")
 
-    page_ids = [
-        str(ch["external_id"]) for ch in channels_by_comp.values() if ch.get("external_id")
-    ]
+    page_ids = list(channels_by_page)
     if not page_ids:
         print("no page ids to collect", file=sys.stderr)
         return 2
@@ -471,11 +476,7 @@ def main() -> int:
             print("APIFY_TOKEN must be set", file=sys.stderr)
             return 2
         # Per-channel caps, from portal.channels.max_ads. NULL means census.
-        caps = {
-            str(ch["external_id"]): ch.get("max_ads")
-            for ch in channels_by_comp.values()
-            if ch.get("external_id")
-        }
+        caps = {pid: ch.get("max_ads") for pid, ch in channels_by_page.items()}
         capped = {k: v for k, v in caps.items() if v}
         if capped:
             print(f"  {len(capped)} of {len(caps)} pages are capped: {capped}")
@@ -527,11 +528,7 @@ def main() -> int:
     #           `total_active_ads` next to it is the SAMPLE SIZE despite the name.
     #
     # Reading the name rather than the meaning is how a 35 gets reported as a 367.
-    page_to_comp = {
-        str(ch["external_id"]): cid
-        for cid, ch in channels_by_comp.items()
-        if ch.get("external_id")
-    }
+    page_to_comp = {pid: ch["competitor_id"] for pid, ch in channels_by_page.items()}
 
     def _page_id_from_url(u: str | None) -> str | None:
         if not isinstance(u, str):
@@ -540,6 +537,7 @@ def main() -> int:
         return m.group(1) if m else None
 
     totals_by_comp: dict[str, int] = {}
+    page_totals: dict[tuple[str, str], int] = {}
     for item in raw:
         if not isinstance(item, dict):
             continue
@@ -569,7 +567,12 @@ def main() -> int:
             cid = page_to_comp.get(str(page_id_of(first) or "")) if first else None
 
         if cid and isinstance(avail, (int, str)) and str(avail).isdigit():
-            totals_by_comp[cid] = max(totals_by_comp.get(cid, 0), int(avail))
+            # One total per page; a brand with two pages has the sum of both.
+            key = (cid, pid or "")
+            page_totals[key] = max(page_totals.get(key, 0), int(avail))
+
+    for (cid, _pid), n in page_totals.items():
+        totals_by_comp[cid] = totals_by_comp.get(cid, 0) + n
 
     if not totals_by_comp:
         # Not fatal, but it means every row records sample_method='unknown', and an
@@ -582,7 +585,7 @@ def main() -> int:
         )
 
     signals, rollup, unmatched = build_rows(
-        ads, competitors, channels_by_comp, client_id, GeoClassifier(), totals_by_comp
+        ads, competitors, channels_by_page, client_id, GeoClassifier(), totals_by_comp
     )
 
     name_of = {c["id"]: c["name"] for c in competitors}

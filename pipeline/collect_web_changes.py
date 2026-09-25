@@ -53,7 +53,7 @@ import requests
 
 from geo import GeoClassifier
 from web_change import classify_change, should_surface, surface_rank
-from supa import Supa
+from supa import Supa, only
 
 NAV_TIMEOUT_MS = 30_000
 
@@ -165,6 +165,7 @@ def main() -> int:
     ap.add_argument("--client", required=True)
     ap.add_argument("--dry-run", action="store_true", help="fetch and classify, write nothing")
     ap.add_argument("--week", help="ISO date inside the target week")
+    ap.add_argument("--competitor", help="collect this one competitor only, by name")
     args = ap.parse_args()
 
     supa_url, supa_key = os.environ.get("SUPABASE_URL"), os.environ.get("SUPABASE_SERVICE_KEY")
@@ -183,6 +184,7 @@ def main() -> int:
     competitors = sb.get("portal", "competitors", {
         "client_id": f"eq.{client_id}", "active": "eq.true",
         "select": "id,name,domain,single_market,prices_by_location"})
+    competitors = only(competitors, args.competitor)
     comp_by_id = {c["id"]: c for c in competitors}
 
     channels = sb.get("portal", "channels", {

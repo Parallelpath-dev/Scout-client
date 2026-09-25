@@ -117,7 +117,9 @@ def _message_key(d: dict[str, Any]) -> str | None:
 
 
 def geo_weight(signal: dict[str, Any], single_market: bool) -> float:
-    if single_market:
+    # A location page is local by definition, whatever the copy says. No competitor
+    # has one yet (11 Sep); Bouldering Project's DC page does.
+    if single_market or signal.get("source_scope") == "local":
         return 1.0
     return GEO_WEIGHT.get(signal.get("geo_relevance") or "none", 0.25)
 
@@ -423,3 +425,20 @@ def score_week(
                   "reason": ("events: " + ", ".join(sorted(set(why)))) if why else where}
     return {"market": market, "competitors": sorted(comps, key=lambda c: c["competitor"] or ""),
             "driver": driver}
+
+
+def score_benchmark(row: dict[str, Any], history: list[dict[str, float]],
+                    per_comp: dict[str, dict[str, Any]]) -> dict[str, Any]:
+    """Score the client itself, for reading beside its competitors, never among them.
+
+    Against its own history once it has some, and before that against the competitors'
+    values this week, exactly as a competitor would be. It takes no event points (its
+    own posts name its own opening, which is not pressure) and it never enters the set
+    reference, the market row or the driver.
+    """
+    ref: dict[str, float | None] = {}
+    for k, v in row["metrics"].items():
+        peers = [r["metrics"][k] for r in per_comp.values() if r["metrics"].get(k) is not None]
+        ref[k] = _set_z(k, v, peers)
+    return score_row(row["metrics"], history or [], [], ref)
+
