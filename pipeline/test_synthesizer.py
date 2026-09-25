@@ -491,6 +491,22 @@ def test_campaign_needs_one_theme_on_two_channels():
     assert any("one channel" in w for w in row["full_report"]["validation"]["warnings"])
 
 
+def test_promotions_get_channel_and_dates_from_their_signals():
+    a = json.loads(json.dumps(GOOD_ANALYSIS))
+    a["sections"]["overview"] = {"promotions": [
+        {"competitor": "Onelife", "offer": "$0 enrollment", "signal_ids": ["e1", "a1"]},
+        {"competitor": "VIDA", "offer": "Free first class", "channels": ["tv"], "first_seen": "1999-01-01"}]}
+    model, _ = fake_model(a, GOOD_STRATEGY)
+    row, rep = sy.synthesize(client=CLIENT, digest=digest(), signals=window(), prior_score=None,
+                             pressure=pressure(), model=model)
+    assert rep.ok, rep.render()
+    promos = row["full_report"]["sections"]["overview"]["promotions"]
+    assert len(promos) == 1, "an offer citing nothing is dropped"
+    p = promos[0]
+    assert p["channels"] == ["email", "paid"], "channels from the cited signals, never the model"
+    assert p["first_seen"] == "2026-09-18" and p["last_seen"] == "2026-09-21"
+
+
 def test_source_url_is_never_the_models():
     a = json.loads(json.dumps(GOOD_ANALYSIS))
     a["developments"][2]["source_url"] = "https://movementgyms.com/made-up"

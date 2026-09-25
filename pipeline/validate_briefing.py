@@ -247,7 +247,7 @@ def _check_evidence(rep, where, dev, week_signal_ids, suppress_low):
 
 
 SECTION_SKIP = {F_SIGNALS, "applies_locally", "format", "keyword", "competitor",
-                "channels", "confidence"}
+                "channels", "confidence", "first_seen", "last_seen"}
 
 
 def _check_sections(rep, sections, week_signal_ids, nv, profile):

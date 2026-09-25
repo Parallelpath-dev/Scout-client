@@ -352,6 +352,44 @@ details.tv table{margin-top:8px}
 .rec-card .act{font-family:var(--font-display);font-weight:600;font-size:16px;line-height:1.4;
   margin:6px 0 6px;max-width:70ch}
 .rec-card .why{font-size:14px;max-width:72ch}
+
+/* Radar, promotions, amenity map, ad filters */
+.pick{display:flex;flex-wrap:wrap;gap:10px 14px;align-items:center;margin-bottom:12px;font-size:13px;color:var(--muted)}
+.feedbar select,.pick select{background:var(--surface);color:var(--ink);border:1px solid var(--line);border-radius:8px;
+  padding:7px 10px;font-family:var(--font-body);font-size:13px}
+.radar-wrap{display:grid;grid-template-columns:minmax(0,440px) 1fr;gap:20px;align-items:center}
+.radar-wrap svg{width:100%;height:auto;display:block}
+.radar-wrap .ring{fill:none;stroke:var(--line)}
+.radar-wrap .ring.mid{stroke:var(--muted);stroke-dasharray:3 4;opacity:.8}
+.radar-wrap .spoke{stroke:var(--line)}
+.radar-wrap text{fill:var(--muted);font-family:var(--font-mono);font-size:10.5px}
+.radar-wrap .axl{fill:var(--ink);font-family:var(--font-body);font-size:12px}
+.radar-wrap .poly{stroke-width:2;stroke-linejoin:round}
+@media (max-width:820px){.radar-wrap{grid-template-columns:1fr}}
+.promos{display:grid;grid-template-columns:repeat(auto-fill,minmax(250px,1fr));gap:12px}
+.promo{background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);padding:14px 16px}
+.promo .who{display:flex;align-items:center;gap:8px;font-family:var(--font-display);font-weight:700;font-size:14px}
+.promo .dot{width:9px;height:9px;border-radius:2px;display:inline-block}
+.promo .off{margin:8px 0 0;font-size:14px}
+.promo .off + .off{border-top:1px solid var(--line);padding-top:8px}
+.promo .meta{font-family:var(--font-mono);font-size:10.5px;color:var(--muted);margin-top:4px;letter-spacing:.04em}
+.promo.none .off{color:var(--muted)}
+.amen td.c{text-align:center;padding:8px 6px}
+.amen svg{display:inline-block;vertical-align:middle}
+.amen .you{font-family:var(--font-mono);font-size:12px}
+.amen .lane{font-family:var(--font-mono);font-size:9.5px;letter-spacing:.08em;text-transform:uppercase;
+  color:var(--accent);border:1px solid var(--accent);border-radius:99px;padding:2px 7px;margin-left:8px;white-space:nowrap}
+.amen .crowd{color:var(--muted);border-color:var(--line)}
+.chips{display:flex;flex-direction:column;gap:8px;margin-bottom:14px}
+.chips .grp{display:flex;flex-wrap:wrap;gap:6px;align-items:center}
+.chips .gl{font-family:var(--font-mono);font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:var(--muted);min-width:90px}
+.chipbtn{font-family:var(--font-body);font-size:12.5px;font-weight:500;padding:6px 11px;border-radius:99px;
+  background:var(--surface);color:var(--muted);border:1px solid var(--line);cursor:pointer}
+.chipbtn[aria-pressed=true]{background:var(--accent-soft);color:var(--ink);border-color:var(--accent)}
+.chipbtn .n{font-family:var(--font-mono);font-size:10.5px;margin-left:5px;opacity:.8}
+.feedbar{display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:12px;
+  font-size:13px;color:var(--muted)}
+.more{margin-top:12px;background:var(--surface);color:var(--ink);border:1px solid var(--line)}
 </style>
 </head>
 <body>
@@ -585,11 +623,11 @@ async function loadContext(portal, week){
   const [competitors, channels, pressure, profiles, ads, posts, kws, geo] = await Promise.all([
     q(portal.from('competitors').select('id,name')),
     q(portal.from('channels').select('id,competitor_id,platform,scope,handle')),
-    q(portal.from('pressure_weekly').select('week_of,competitor_id,score,status,method').order('week_of')),
+    q(portal.from('pressure_weekly').select('week_of,competitor_id,score,status,method,components').order('week_of')),
     q(portal.from('signals').select('week_of,competitor_id,channel_id,platform:data->>platform,followers:data->>followers,posts:data->>posts_in_week,eng:data->>avg_engagement,capped:data->>capped')
         .eq('signal_type','social_profile').order('week_of').limit(2000)),
     q(portal.from('signals').select('id,competitor_id,geo_relevance,source_url,body:data->>body,title:data->>title,start:data->>start_date,format:data->>display_format,cta:data->>cta_text,recruit:data->>is_recruitment,scanned:data->text_scanned')
-        .eq('signal_type','ad_active').eq('week_of', week).gte('data->>start_date', addDays(week, -7)).limit(3000)),
+        .eq('signal_type','ad_active').eq('week_of', week).limit(3000)),
     q(portal.from('signals').select('id,competitor_id,channel_id,source_url,text:data->>text,platform:data->>platform,posted:data->>posted_at,likes:data->>likes,comments:data->>comments')
         .eq('signal_type','social_post').eq('week_of', week).limit(500)),
     q(portal.from('signals').select('competitor_id,signal_type,keywords:data->keywords')
@@ -599,10 +637,12 @@ async function loadContext(portal, week){
   const names = Object.fromEntries(competitors.map(c => [c.id, c.name]));
   const order = competitors.map(c => c.name).sort((a, b) => a.localeCompare(b));
   const color = Object.fromEntries(order.map((n, i) => [n, `var(--s${(i % 5) + 1})`]));
-  return { week, competitors, channels, pressure, profiles, ads, posts, kws, geo, names, order, color };
+  return { week, competitors, channels, pressure, profiles, ads, posts, kws, geo, names, order, color, from: addDays(week, -7) };
 }
 
+let CLIENT_REC = null;
 function render(client, session, compCount, latest){
+  CLIENT_REC = client;
   $('#login').style.display = 'none';
   $('#app').classList.add('on');
   /* boot() runs on page load AND again when Supabase fires SIGNED_IN after the
@@ -673,6 +713,7 @@ function render(client, session, compCount, latest){
     wrap.appendChild(p);
   });
   wireCharts(wrap);
+  if(latest && latest._ctx){ wireRadar(wrap, latest._ctx); wireAdFeed(wrap, latest._ctx); }
 }
 
 function show(id, btn){
@@ -1003,7 +1044,9 @@ function overviewPanel(b){
     </div>
   </div>
   ${scoreTable(pr)}
+  ${radarBlock(ctx, b)}
   ${campaigns(b)}
+  ${promotionsBlock(b, ctx)}
   ${b.summary ? sec('This week', '', `<p class="summary">${esc(b.summary)}</p>`) : ''}
   ${sec('What changed', `${devs.length} development${devs.length === 1 ? '' : 's'}, ranked`,
     devs.length ? `<div class="devs">${devs.map(d => { const u = safeUrl(d.source_url); return `
@@ -1019,6 +1062,7 @@ function overviewPanel(b){
         ${u ? `<a class="src" href="${esc(u)}" target="_blank" rel="noopener noreferrer">View source ↗</a>` : ''}
       </article>`; }).join('')}</div>`
       : empty('A quiet week: nothing your competitors did clears the bar for a development.'))}
+  ${amenityBlock(CLIENT_REC || {}, ctx)}
   ${pressureTrend(ctx)}
   ${cov.length ? sec('What we could not see', '', `<ul class="cover">${cov.map(c => `<li>${esc(c)}</li>`).join('')}</ul>`) : ''}`;
 }
@@ -1076,14 +1120,7 @@ function paidCharts(ctx){
   const launchRows = ctx.order.map(n => ({ name:n, color:ctx.color[n], parts:[{ label:'New messages', value:Object.keys(byComp[n] || {}).length }] }));
   out.push(sec('New ad messages this week', `started ${fmtDate(from)} or later`,
     barChart(launchRows, { unit:'' }) + `<p class="fine">Counted by message, not ad ID: Meta files one message under many IDs.</p>`));
-  const cards = ctx.order.flatMap(n => Object.values(byComp[n] || {}).map(x => ({ n, ...x })));
-  out.push(sec('Active ad intelligence', `${cards.length} new message${cards.length === 1 ? '' : 's'}`,
-    cards.length ? `<div class="feed">${cards.map(({ n, ad, ids }) => { const u = safeUrl(ad.source_url); return `
-      <div class="card"><div class="who"><b><span class="dot" style="background:${ctx.color[n]}"></span>${esc(n)}</b>${ad.format ? `<span class="chip">${esc(ad.format)}</span>` : ''}</div>
-        ${(ad.title || (ad.scanned || {}).card0_title) ? `<div class="ttl">${esc(ad.title || ad.scanned.card0_title)}</div>` : ''}
-        ${(ad.body || (ad.scanned || {}).card0_body) ? `<div class="txt">${esc(ad.body || ad.scanned.card0_body)}</div>` : ''}
-        <div class="meta"><span>Started ${esc(fmtDate(ad.start))}</span>${ad.cta ? `<span>${esc(ad.cta)}</span>` : ''}${ids > 1 ? `<span>${ids} ad IDs</span>` : ''}${u ? `<a href="${esc(u)}" target="_blank" rel="noopener noreferrer">Ad Library ↗</a>` : ''}</div>
-      </div>`; }).join('')}</div>` : empty('No new ad messages this week.')));
+  out.push(adFeedBlock());
   out.push(sec('Paid keyword trend', 'Semrush estimate, directional',
     empty('The trend starts with the second weekly reading on 28 Sep. Semrush models paid keywords from its own crawl, so read it for direction, never as a count of what anyone bids on.')));
   return out.join('');
@@ -1127,6 +1164,172 @@ function socialCharts(ctx){
         <div class="meta"><span>${esc(fmtDate(p.posted))}</span>${num(p.likes) != null ? `<span>${num(p.likes)} likes</span>` : ''}${num(p.comments) != null ? `<span>${num(p.comments)} comments</span>` : ''}${u ? `<a href="${esc(u)}" target="_blank" rel="noopener noreferrer">View post ↗</a>` : ''}</div>
       </div>`; }).join('')}</div>` : empty('No posts collected this week.')));
   return out.join('');
+}
+
+/* ── Radar: channel scores for up to three competitors, any scored week ── */
+const RADAR_AX = [['paid','Paid'],['search','Search'],['web','Website'],['social','Social'],['email','Email']];
+function radarWeeks(ctx){
+  return [...new Set((ctx.pressure || []).filter(r => r.competitor_id && r.components &&
+    Object.values(r.components).some(x => x && typeof x.score === 'number')).map(r => String(r.week_of).slice(0,10)))].sort().reverse();
+}
+function radarSvg(ctx, week, picks){
+  const W = 440, cx = 220, cy = 205, R = 150;
+  const ang = i => (-90 + i * 72) * Math.PI / 180;
+  const pt = (i, v) => [cx + Math.cos(ang(i)) * R * v / 100, cy + Math.sin(ang(i)) * R * v / 100];
+  const rows = picks.map(n => (ctx.pressure || []).find(r => String(r.week_of).slice(0,10) === week && ctx.names[r.competitor_id] === n)).filter(Boolean);
+  const rings = [25, 50, 75, 100].map(v => `<polygon class="ring${v === 50 ? ' mid' : ''}" points="${RADAR_AX.map((_, i) => pt(i, v).join(',')).join(' ')}"/>`).join('');
+  const spokes = RADAR_AX.map((_, i) => { const [x, y] = pt(i, 100); return `<line class="spoke" x1="${cx}" y1="${cy}" x2="${x}" y2="${y}"/>`; }).join('');
+  const labels = RADAR_AX.map(([k, l], i) => { const [x, y] = pt(i, 118);
+    const none = rows.length && rows.every(r => !(r.components || {})[k] || typeof r.components[k].score !== 'number');
+    return `<text class="axl" x="${x}" y="${y + 4}" text-anchor="middle">${esc(l)}${none ? ' · not yet' : ''}</text>`; }).join('');
+  const ticks = [50, 100].map(v => `<text x="${cx + 4}" y="${cy - R * v / 100 + 12}">${v}</text>`).join('');
+  const polys = rows.map(r => { const n = ctx.names[r.competitor_id], c = ctx.color[n];
+    const pts = RADAR_AX.map(([k], i) => { const x = (r.components || {})[k]; return x && typeof x.score === 'number' ? pt(i, x.score) : null; }).filter(Boolean);
+    const dots = pts.map(p => `<circle cx="${p[0].toFixed(1)}" cy="${p[1].toFixed(1)}" r="4" fill="${c}" stroke="var(--surface)" stroke-width="2"/>`).join('');
+    return `<polygon class="poly" points="${pts.map(p => p.map(v => v.toFixed(1)).join(',')).join(' ')}" fill="${c}" fill-opacity=".14" stroke="${c}"><title>${esc(n)}</title></polygon>${dots}`; }).join('');
+  const table = tableView(['Competitor', ...RADAR_AX.map(a => a[1])], rows.map(r => [ctx.names[r.competitor_id],
+    ...RADAR_AX.map(([k]) => { const x = (r.components || {})[k]; return x && typeof x.score === 'number' ? x.score : 'not yet'; })]));
+  return `<div class="radar-wrap"><svg viewBox="0 0 ${W} 410" role="img" aria-label="Channel scores by competitor">${rings}${spokes}${ticks}${polys}${labels}</svg>
+    <div>${legend(rows.map(r => ctx.names[r.competitor_id]), ctx.color)}
+      <p class="fine">Dashed ring: 50, a normal week. Further out means further above that competitor's normal on that channel.</p>${table}</div></div>`;
+}
+function radarBlock(ctx, b){
+  const weeks = radarWeeks(ctx);
+  if(!weeks.length) return '';
+  const comps = ((b.full_report || {}).pressure || {}).competitors || [];
+  const top = [...comps].sort((x, y) => (y.score ?? -1) - (x.score ?? -1)).slice(0, 3).map(c => c.competitor);
+  const opt = (sel) => `<option value="">None</option>` + ctx.order.map(n => `<option${n === sel ? ' selected' : ''}>${esc(n)}</option>`).join('');
+  return sec('Channel comparison', 'competitive score per channel',
+    `<div class="chart" id="radar" data-week="${esc(weeks[0])}">
+      <div class="pick">
+        ${[0,1,2].map(i => `<label>Competitor ${i + 1} <select data-radar="c${i}">${opt(top[i])}</select></label>`).join('')}
+        <label>Week of <select data-radar="week">${weeks.map(w => `<option value="${esc(w)}">${esc(fmtDate(w))}</option>`).join('')}</select></label>
+      </div>
+      <div data-radar="plot">${radarSvg(ctx, weeks[0], top)}</div>
+    </div>
+    <p class="fine">This comparison becomes more useful week by week. Each channel is calibrated against that competitor's previous weeks, and until a channel has four weeks of history it is compared with the rest of the set instead. Earlier weeks join the week picker as they are scored.</p>`);
+}
+function wireRadar(root, ctx){
+  const el = root.querySelector('#radar'); if(!el) return;
+  const redraw = () => {
+    const week = el.querySelector('[data-radar=week]').value;
+    const picks = [0,1,2].map(i => el.querySelector(`[data-radar=c${i}]`).value).filter(Boolean);
+    el.querySelector('[data-radar=plot]').innerHTML = radarSvg(ctx, week, [...new Set(picks)]);
+  };
+  el.querySelectorAll('select').forEach(x => x.addEventListener('change', redraw));
+}
+
+/* ── Promotions: the offers each competitor is running, with channel and start ── */
+function promotionsBlock(b, ctx){
+  const list = (((b.full_report || {}).sections || {}).overview || {}).promotions || [];
+  if(!ctx.order.length && !list.length) return '';
+  const label = { paid:'Paid', social:'Social', web:'Website', email:'Email' };
+  const cards = ctx.order.map(n => {
+    const mine = list.filter(p => p.competitor === n);
+    return `<div class="promo${mine.length ? '' : ' none'}"><div class="who"><span class="dot" style="background:${ctx.color[n]}"></span>${esc(n)}</div>
+      ${mine.length ? mine.map(p => `<p class="off">${esc(p.offer)}<span class="meta" style="display:block">${esc((p.channels || []).map(c => label[c] || c).join(' · '))}${p.first_seen ? ` · running since ${esc(fmtDate(p.first_seen))}` : ''}</span></p>`).join('')
+        : `<p class="off">No offer seen this week.</p>`}</div>`;
+  }).join('');
+  return sec('Promotions', 'what each competitor is offering right now', `<div class="promos">${cards}</div>`);
+}
+
+/* ── Amenities: what each competitor is promoting, against what you offer ── */
+function amenityBlock(client, ctx){
+  const am = ((client.config || {}).amenities || []).filter(a => a && a.key && Array.isArray(a.terms));
+  if(!am.length || !ctx.order.length) return '';
+  const rx = a => new RegExp('\\b(' + a.terms.map(t => t.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|') + ')', 'i');
+  const acq = (ctx.ads || []).filter(x => String(x.recruit) !== 'true');
+  const texts = {};  // competitor -> unique messages and posts
+  ctx.order.forEach(n => texts[n] = new Map());
+  acq.forEach(a => { const n = ctx.names[a.competitor_id]; if(!n) return;
+    const t = [a.title, a.body, ...Object.values(a.scanned || {})].filter(v => typeof v === 'string').join(' ');
+    texts[n].set('ad:' + msgKey(a), t); });
+  (ctx.posts || []).forEach(p => { const n = ctx.names[p.competitor_id]; if(!n || !p.text) return;
+    texts[n].set('post:' + p.text.replace(/\s+/g,' ').trim().toLowerCase().slice(0,160), p.text); });
+  const counts = am.map(a => { const r = rx(a);
+    return Object.fromEntries(ctx.order.map(n => [n, [...texts[n].values()].filter(t => r.test(t)).length])); });
+  const max = Math.max(1, ...counts.flatMap(c => Object.values(c)));
+  const dot = (v, color) => { if(!v) return `<span style="color:var(--line)">·</span>`;
+    const r = 4 + 9 * Math.sqrt(v / max);
+    return `<svg width="30" height="30" viewBox="0 0 30 30"><circle cx="15" cy="15" r="${r.toFixed(1)}" fill="${color}" fill-opacity=".85"/></svg><span class="fine" style="margin:0 0 0 2px">${v}</span>`; };
+  const rows = am.map((a, i) => {
+    const promoters = ctx.order.filter(n => counts[i][n] > 0).length;
+    const lane = a.client_offers === true && promoters <= 1 ? `<span class="lane">Open lane</span>`
+               : promoters >= 4 ? `<span class="lane crowd">Crowded</span>` : '';
+    const you = a.client_offers === true ? '● yes' : a.client_offers === false ? '○ no' : '? unknown';
+    return `<tr><td class="nm">${esc(a.label)}${lane}</td><td class="c you">${you}</td>
+      ${ctx.order.map(n => `<td class="c">${dot(counts[i][n], ctx.color[n])}</td>`).join('')}</tr>`;
+  }).join('');
+  return sec('Amenities being promoted', 'ads running now and posts this week',
+    `<div class="tbl-wrap"><table class="scores amen"><thead><tr><th>Amenity</th><th>You offer</th>${ctx.order.map(n => `<th style="text-align:center">${esc(n)}</th>`).join('')}</tr></thead>
+    <tbody>${rows}</tbody></table></div>
+    <p class="fine">Each dot counts the distinct ad messages and posts that mention the amenity; bigger means more. Open lane: something you offer that at most one competitor is promoting. "You offer" comes from your own brief; "unknown" means we have not confirmed it.</p>`);
+}
+
+/* ── Paid: every running ad message, filterable and sortable ── */
+const GEO_OF = { dc_landing:'dc', dc_explicit:'dc', regional:'region', none:'none', other_market:'other' };
+const AD_FILTERS = [
+  ['Geography', [['dc','Names DC'],['region','Names the region'],['none','Names no place'],['other','Names another market']]],
+  ['Timing', [['new','New this week']]],
+  ['Format', [['VIDEO','Video'],['DCO','DCO'],['IMAGE','Image'],['CAROUSEL','Carousel']]],
+];
+function adMessages(ctx){
+  const by = new Map();
+  (ctx.ads || []).filter(a => String(a.recruit) !== 'true' && ctx.names[a.competitor_id]).forEach(a => {
+    const k = a.competitor_id + '|' + msgKey(a);
+    const m = by.get(k) || { n: ctx.names[a.competitor_id], ads: [], geo: new Set(), fmt: new Set(), newest: '', first: '9999' };
+    const st = String(a.start || '').slice(0,10);
+    m.ads.push(a); m.geo.add(GEO_OF[a.geo_relevance] || 'none'); if(a.format) m.fmt.add(a.format);
+    if(st > m.newest){ m.newest = st; m.ad = a; } if(st && st < m.first) m.first = st;
+    by.set(k, m);
+  });
+  return [...by.values()].map(m => ({ ...m, ad: m.ad || m.ads[0], isNew: m.newest >= ctx.from }));
+}
+function adFeedHtml(ctx, st){
+  const all = adMessages(ctx);
+  const pass = (m, skipGroup) => {
+    if(skipGroup !== 'Geography' && st.Geography.size && ![...m.geo].some(g => st.Geography.has(g))) return false;
+    if(skipGroup !== 'Timing' && st.Timing.size && !m.isNew) return false;
+    if(skipGroup !== 'Format' && st.Format.size && ![...m.fmt].some(f => st.Format.has(f))) return false;
+    if(skipGroup !== 'Competitor' && st.Competitor.size && !st.Competitor.has(m.n)) return false;
+    return true; };
+  const shown = all.filter(m => pass(m));
+  const sorter = { newest:(a, b) => b.newest.localeCompare(a.newest) || b.ads.length - a.ads.length,
+                   variants:(a, b) => b.ads.length - a.ads.length || b.newest.localeCompare(a.newest),
+                   competitor:(a, b) => ctx.order.indexOf(a.n) - ctx.order.indexOf(b.n) || b.newest.localeCompare(a.newest) }[st.sort];
+  shown.sort(sorter);
+  const test = { Geography:(m, v) => m.geo.has(v), Timing:(m) => m.isNew, Format:(m, v) => m.fmt.has(v), Competitor:(m, v) => m.n === v };
+  const groups = [...AD_FILTERS, ['Competitor', ctx.order.map(n => [n, n])]];
+  const chips = groups.map(([g, opts]) => `<div class="grp"><span class="gl">${esc(g)}</span>${opts.map(([v, l]) => {
+      const n = all.filter(m => pass(m, g) && test[g](m, v)).length;
+      return `<button type="button" class="chipbtn" data-g="${esc(g)}" data-v="${esc(v)}" aria-pressed="${st[g].has(v)}">${esc(l)}<span class="n">${n}</span></button>`; }).join('')}</div>`).join('');
+  const lim = st.all ? shown.length : Math.min(shown.length, 30);
+  const cards = shown.slice(0, lim).map(m => { const ad = m.ad, u = safeUrl(ad.source_url), sc = ad.scanned || {};
+    return `<div class="card"><div class="who"><b><span class="dot" style="background:${ctx.color[m.n]}"></span>${esc(m.n)}</b>${[...m.fmt].map(f => `<span class="chip">${esc(f)}</span>`).join('')}</div>
+      ${(ad.title || sc.card0_title) ? `<div class="ttl">${esc(ad.title || sc.card0_title)}</div>` : ''}
+      ${(ad.body || sc.card0_body) ? `<div class="txt">${esc(ad.body || sc.card0_body)}</div>` : ''}
+      <div class="meta"><span>${m.first >= ctx.from ? `New · started ${esc(fmtDate(m.first))}` : m.isNew ? `New variant this week · running since ${esc(fmtDate(m.first))}` : `Running since ${esc(fmtDate(m.first))}`}</span><span>${esc([...m.geo].map(g => ({dc:'Names DC',region:'Region',none:'No place',other:'Other market'})[g]).join(', '))}</span>${m.ads.length > 1 ? `<span>${m.ads.length} ad IDs</span>` : ''}${u ? `<a href="${esc(u)}" target="_blank" rel="noopener noreferrer">Ad Library ↗</a>` : ''}</div>
+    </div>`; }).join('');
+  return `<div class="chips">${chips}</div>
+    <div class="feedbar"><span>Showing ${lim} of ${shown.length} messages${shown.length !== all.length ? ` (${all.length} running in total)` : ''}. Filters in one group widen; filters across groups narrow.</span>
+      <label>Sort <select data-sort>${[['newest','Newest first'],['variants','Most ad variants'],['competitor','Competitor']].map(([v, l]) => `<option value="${v}"${st.sort === v ? ' selected' : ''}>${l}</option>`).join('')}</select></label></div>
+    ${shown.length ? `<div class="feed">${cards}</div>` : empty('No running ad matches those filters.')}
+    ${lim < shown.length ? `<button type="button" class="more" data-all>Show all ${shown.length}</button>` : ''}`;
+}
+function adFeedBlock(){
+  return sec('Active ad intelligence', 'every message running now', `<div id="adfeed"></div>`);
+}
+function wireAdFeed(root, ctx){
+  const el = root.querySelector('#adfeed'); if(!el) return;
+  const st = { Geography:new Set(), Timing:new Set(), Format:new Set(), Competitor:new Set(), sort:'newest', all:false };
+  const draw = () => { el.innerHTML = adFeedHtml(ctx, st); };
+  el.addEventListener('click', e => {
+    const c = e.target.closest('.chipbtn');
+    if(c){ const set = st[c.dataset.g]; set.has(c.dataset.v) ? set.delete(c.dataset.v) : set.add(c.dataset.v); st.all = false; draw(); return; }
+    if(e.target.closest('[data-all]')){ st.all = true; draw(); }
+  });
+  el.addEventListener('change', e => { if(e.target.matches('[data-sort]')){ st.sort = e.target.value; draw(); } });
+  draw();
 }
 
 function keyPanel(){

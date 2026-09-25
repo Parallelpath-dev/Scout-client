@@ -504,6 +504,10 @@ How to read the digest:
 - Name a competitor's location in full, never a short form a DC reader could take for a
   neighbourhood: a /columbia/ landing page is "Columbia, MD".
 - Cite every signal a claim rests on. A claim from a social post cites that post.
+- promotions: every concrete offer a competitor is running this week: a price, a trial,
+  a free pass or class, a waived fee, a credit, a discount, a limited-time deal. One item
+  per distinct offer, in plain terms ("$35 two-week trial", never "great value"). Cite
+  every signal carrying it. An amenity or a brand message is not a promotion.
 - campaign_signals: flag a competitor only when the SAME theme shows up on two or more
   channels this week. Channels are paid ads, organic social, email and website; several
   social platforms are one channel. Cite signals from each channel, one evidence line per
@@ -544,6 +548,8 @@ ANALYST_SCHEMA = """{
   ],
   "sections": {
     "overview": {
+      "promotions": [{"competitor": "<name>", "offer": "<the offer in plain terms, aim for 12 words, hard limit 20>",
+                      "signal_ids": ["<refs of the ads, posts, emails or pages carrying it>"]}],
       "campaign_signals": [{"competitor": "<name>", "theme": "<the shared message, aim for 10 words, hard limit 15>",
                             "evidence": ["<what one channel shows, aim for 20 words, hard limit 30>", "<the next channel>"],
                             "signal_ids": ["<refs from at least two channels>"]}]
@@ -928,6 +934,26 @@ CHANNEL_OF = {"ad_active": "paid", "social_post": "social", "social_profile": "s
               "email": "email", "web_change": "web"}
 
 
+def _seen(sig: dict[str, Any]) -> str | None:
+    d = sig.get("data") or {}
+    v = d.get("start_date") or d.get("posted_at") or d.get("received_at") or sig.get("collected_at")
+    return str(v)[:10] if v else None
+
+
+def promotion_meta(items: Any, by_id: dict[str, dict[str, Any]]) -> list[dict[str, Any]]:
+    """Channels and first/last seen for each promotion, from the signals it cites."""
+    out = []
+    for x in items if isinstance(items, list) else []:
+        if not isinstance(x, dict):
+            continue
+        cited = [by_id[i] for i in (x.get("signal_ids") or []) if i in by_id]
+        dates = sorted(d for d in (_seen(c) for c in cited) if d)
+        chans = sorted({CHANNEL_OF[c["signal_type"]] for c in cited if c.get("signal_type") in CHANNEL_OF})
+        out.append(dict(x, channels=chans, first_seen=dates[0] if dates else None,
+                        last_seen=dates[-1] if dates else None))
+    return out
+
+
 def campaign_channels(items: Any, by_id: dict[str, dict[str, Any]]
                       ) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
     """Keep a campaign signal only if its cited signals really span two channels.
@@ -998,6 +1024,7 @@ def _assemble(analysis: dict[str, Any], *, client: dict[str, Any], digest: dict[
     campaigns, not_campaigns = campaign_channels(
         (merged.get("overview") or {}).get("campaign_signals"), by_id)
     merged.setdefault("overview", {})["campaign_signals"] = campaigns
+    merged["overview"]["promotions"] = promotion_meta(merged["overview"].get("promotions"), by_id)
     # The same shape filter and uncited-drop as the findings, and then the same gate.
     sections, uncited = _sections(merged)
 
@@ -1060,7 +1087,7 @@ def _sections(s: dict[str, Any]) -> tuple[dict[str, Any], list[tuple[str, dict]]
     not in the digest is kept: that is fabrication, and the gate must see it.
     """
     shape = {
-        "overview": ("campaign_signals",),
+        "overview": ("promotions", "campaign_signals"),
         "search": ("keyword_movement", "demand_shifts", "recommendations"),
         "paid": ("live_ad_creative", "spend_signals", "recommendations"),
         "social": ("audience_cadence", "content_themes", "recommendations"),
