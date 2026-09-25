@@ -28,7 +28,7 @@ on:
         required: false
         default: ''
       mode:
-        description: 'digest (no model, no write) | dry_run (model, no write) | live'
+        description: 'digest (no model, no write) | dry_run (model, no write) | live | benchmark (score your own row only, no model, briefing untouched)'
         required: false
         default: 'live'
       backfill_pressure:
@@ -74,6 +74,7 @@ jobs:
           case "${{ github.event.inputs.mode }}" in
             digest)  ARGS="$ARGS --digest-only" ;;
             dry_run) ARGS="$ARGS --dry-run" ;;
+            benchmark) ARGS="$ARGS --benchmark-only" ;;
           esac
           if [ "${{ github.event.inputs.backfill_pressure || '0' }}" != "0" ]; then
             ARGS="$ARGS --backfill-pressure ${{ github.event.inputs.backfill_pressure }}"

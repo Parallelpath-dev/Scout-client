@@ -1245,6 +1245,12 @@ def pressure_rows(client_id: str, wk: date, p: dict[str, Any]) -> list[dict[str,
     return rows
 
 
+def benchmark_rows(rows: list[dict], self_id: str) -> list[dict]:
+    """The --benchmark-only write: the client's own row and nothing else, so scoring the
+    benchmark mid-week never moves a competitor's or the market's published score."""
+    return [r for r in rows if r.get("competitor_id") == self_id]
+
+
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--client", required=True)
@@ -1252,6 +1258,9 @@ def main() -> int:
     ap.add_argument("--digest-only", action="store_true",
                     help="build and print the digest, call no model, write nothing")
     ap.add_argument("--dry-run", action="store_true", help="call the model, write nothing")
+    ap.add_argument("--benchmark-only", action="store_true",
+                    help="score the client's own benchmark row for the week and store that "
+                         "row only: no model, no briefing, competitors' rows untouched")
     ap.add_argument("--backfill-pressure", type=int, default=0, metavar="N",
                     help="before this week, compute and store pressure history for the N "
                          "previous weeks from whatever signals they hold (no briefings)")
@@ -1302,6 +1311,17 @@ def main() -> int:
               f"components={ {k: v.get('score') for k, v in (b.get('components') or {}).items()} } "
               "(kept out of the market score and the digest)")
 
+    if args.benchmark_only:
+        me = ctx.get("client_self")
+        if not me or not pressure.get("benchmark"):
+            print("[synth] no client benchmark row (competitors.is_client) to score",
+                  file=sys.stderr)
+            return 1
+        rows = benchmark_rows(pressure_rows(client["id"], wk, pressure), me["id"])
+        sb.upsert("portal", "pressure_weekly", rows,
+                  on_conflict="client_id,competitor_id,week_of")
+        print(f"[synth] stored the benchmark row only ({len(rows)}); briefing untouched")
+        return 0
     if args.digest_only:
         print(json.dumps(dict(digest, pressure=pressure_for_digest(pressure)), indent=1,
                          default=str))
