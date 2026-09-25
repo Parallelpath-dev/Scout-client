@@ -525,6 +525,9 @@ def test_client_row_stays_out_of_pressure_and_digest():
     assert "c-bp" not in json.dumps(sy.pressure_for_digest(withme)), "the Analyst never sees it"
     rows = sy.pressure_rows("cl", WK, withme)
     assert any(r["competitor_id"] == "c-bp" for r in rows), "stored for the dashboard"
+    only = sy.benchmark_rows(rows, "c-bp")
+    assert len(only) == 1 and only[0]["competitor_id"] == "c-bp", \
+        "--benchmark-only never rewrites a competitor's or the market's row"
 
 
 def test_source_url_is_never_the_models():
