@@ -39,8 +39,13 @@ on:
         description: 'Organic social: also collect this many earlier weeks (0 = none, 12 = a quarter)'
         required: false
         default: '0'
+      competitor:
+        description: 'Collect one competitor only, by name (blank = everyone). Others keep their rows.'
+        required: false
+        default: ''
 
 env:
+  COMPETITOR: ${{ github.event.inputs.competitor || '' }}
   SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
   SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
   APIFY_TOKEN: ${{ secrets.APIFY_TOKEN }}
@@ -72,6 +77,7 @@ jobs:
         run: |
           cd pipeline
           python3 test_geo.py
+          python3 test_meta_ads.py
           python3 test_web_change.py
           python3 test_email_classify.py
 
@@ -85,7 +91,7 @@ jobs:
           if [ "${{ github.event.inputs.dry_run }}" = "true" ]; then
             ARGS="$ARGS --dry-run"
           fi
-          cd pipeline && python3 classify_meta_ads.py $ARGS
+          cd pipeline && python3 classify_meta_ads.py $ARGS ${COMPETITOR:+--competitor "$COMPETITOR"}
 
       # Runs after the ads step and independently of it: a failure in one collector
       # should not cost the week's other signals.
@@ -99,7 +105,7 @@ jobs:
           if [ "${{ github.event.inputs.dry_run }}" = "true" ]; then
             ARGS="$ARGS --dry-run"
           fi
-          cd pipeline && python3 collect_web_changes.py $ARGS
+          cd pipeline && python3 collect_web_changes.py $ARGS ${COMPETITOR:+--competitor "$COMPETITOR"}
 
       # Organic social. One Apify actor per platform, every channel on that platform in
       # one run. Posts published in the seven days before the briefing week, filed under
@@ -125,7 +131,7 @@ jobs:
           if [ "${{ github.event.inputs.social_backfill_weeks || '0' }}" != "0" ]; then
             ARGS="$ARGS --backfill-weeks ${{ github.event.inputs.social_backfill_weeks }}"
           fi
-          cd pipeline && python3 collect_social.py $ARGS
+          cd pipeline && python3 collect_social.py $ARGS ${COMPETITOR:+--competitor "$COMPETITOR"}
 
       # Email arrives continuously via the portal-inbound-email webhook and is stored
       # raw; this is the step that turns it into signals. It reads whatever accumulated

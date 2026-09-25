@@ -1119,10 +1119,14 @@ def load(sb: Supa, slug: str, wk: date) -> dict[str, Any]:
         raise SystemExit(f"no client with slug {slug}")
     client = clients[0]
     cid = client["id"]
-    competitors = sb.get("portal", "competitors", {
+    everyone = sb.get("portal", "competitors", {
         "client_id": f"eq.{cid}", "active": "eq.true",
-        "select": "id,name,domain,single_market,prices_by_location,display_local,monitored_site",
+        "select": "id,name,domain,single_market,prices_by_location,display_local,monitored_site,is_client",
         "order": "name"})
+    # The client's own row is a benchmark. It is collected like a competitor and kept out
+    # of everything competitive: the digest, the pressure score, the set reference.
+    competitors = [c for c in everyone if not c.get("is_client")]
+    client_self = next((c for c in everyone if c.get("is_client")), None)
     comp_ids = ",".join(c["id"] for c in competitors) or "00000000-0000-0000-0000-000000000000"
     email_ch = sb.get("portal", "channels", {
         "competitor_id": f"in.({comp_ids})", "purpose": "eq.email", "active": "eq.true",
@@ -1151,7 +1155,16 @@ def load(sb: Supa, slug: str, wk: date) -> dict[str, Any]:
     prior = sb.get("portal", "briefings", {
         "client_id": f"eq.{cid}", "week_of": f"lt.{wk.isoformat()}",
         "select": "pressure_score", "order": "week_of.desc", "limit": "1"})
-    signals = fetch_week_signals(sb, cid, wk)
+    all_signals = fetch_week_signals(sb, cid, wk)
+    self_id = client_self["id"] if client_self else None
+    signals = [x for x in all_signals if not self_id or x.get("competitor_id") != self_id]
+    self_signals = [x for x in all_signals if self_id and x.get("competitor_id") == self_id]
+    if self_id:
+        rollups = [r for r in rollups if r.get("competitor_id") != self_id]
+        prior_rollups = [r for r in prior_rollups if r.get("competitor_id") != self_id]
+    self_social = sb.get("portal", "channels", {
+        "competitor_id": f"eq.{self_id}", "purpose": "eq.organic_social",
+        "active": "eq.true", "select": "id"}) if self_id else []
     history_rows = sb.get("portal", "pressure_weekly", {
         "client_id": f"eq.{cid}",
         "week_of": f"gte.{(wk - timedelta(weeks=mo_lookback())).isoformat()}",
@@ -1190,6 +1203,8 @@ def load(sb: Supa, slug: str, wk: date) -> dict[str, Any]:
         "social_channels": {c: {x["id"] for x in social_ch if x["competitor_id"] == c}
                             for c in {x["competitor_id"] for x in social_ch}},
         "watch_terms": ((client.get("config") or {}).get("watch_terms") or []),
+        "client_self": client_self, "self_signals": self_signals,
+        "self_social_channels": {self_id: {x["id"] for x in self_social}} if self_id else {},
     }
 
 
@@ -1203,7 +1218,16 @@ def compute_pressure(ctx: dict[str, Any], wk: date) -> tuple[dict[str, Any], dic
                                email_channels=ctx["email_channels"],
                                watch_terms=ctx["watch_terms"],
                                social_channels=ctx.get("social_channels"))
-    return mo.score_week(per_comp, ctx["history"], ctx["competitors"]), per_comp
+    pressure = mo.score_week(per_comp, ctx["history"], ctx["competitors"])
+    me = ctx.get("client_self")
+    if me:
+        mine = mo.week_metrics(ctx.get("self_signals") or [], [me], wk, ran=ctx["ran"],
+                               email_channels=set(), watch_terms=[],
+                               social_channels=ctx.get("self_social_channels"))
+        b = mo.score_benchmark(mine[me["id"]], ctx["history"].get(me["id"], []), per_comp)
+        pressure["benchmark"] = {"competitor_id": me["id"], "competitor": me["name"],
+                                 "metrics": mine[me["id"]]["metrics"], "events": [], **b}
+    return pressure, per_comp
 
 
 def pressure_rows(client_id: str, wk: date, p: dict[str, Any]) -> list[dict[str, Any]]:
@@ -1215,7 +1239,10 @@ def pressure_rows(client_id: str, wk: date, p: dict[str, Any]) -> list[dict[str,
                 "score": r["score"], "status": r["status"], "trend": r.get("trend"),
                 "components": r.get("components") or {}, "basis": r.get("basis") or {},
                 "method": "momentum-v2"}
-    return [row(None, p["market"])] + [row(c["competitor_id"], c) for c in p["competitors"]]
+    rows = [row(None, p["market"])] + [row(c["competitor_id"], c) for c in p["competitors"]]
+    if p.get("benchmark"):
+        rows.append(row(p["benchmark"]["competitor_id"], p["benchmark"]))
+    return rows
 
 
 def main() -> int:
@@ -1269,6 +1296,11 @@ def main() -> int:
     for c in pressure["competitors"]:
         print(f"[synth]   {c['competitor']:<10} {c['status']:<11} score={c['score']} "
               f"events={[e['kind'] for e in c['events']]} metrics={c['metrics']}")
+    if pressure.get("benchmark"):
+        b = pressure["benchmark"]
+        print(f"[synth]   benchmark {b['competitor']}: {b['status']} score={b['score']} "
+              f"components={ {k: v.get('score') for k, v in (b.get('components') or {}).items()} } "
+              "(kept out of the market score and the digest)")
 
     if args.digest_only:
         print(json.dumps(dict(digest, pressure=pressure_for_digest(pressure)), indent=1,

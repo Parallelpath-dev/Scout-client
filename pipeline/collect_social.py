@@ -42,16 +42,18 @@ from typing import Any
 import apify
 import social_platforms as sp
 from geo import GeoClassifier
-from supa import Supa
+from supa import Supa, only
 from week_window import parse_week
 
 TEXT_CAP = 1500
 
 
-def load_channels(sb: Supa, client_id: str, platform: str | None) -> tuple[list[dict], list[sp.Channel]]:
+def load_channels(sb: Supa, client_id: str, platform: str | None,
+                  only_name: str | None = None) -> tuple[list[dict], list[sp.Channel]]:
     competitors = sb.get("portal", "competitors", {
         "client_id": f"eq.{client_id}", "active": "eq.true",
         "select": "id,name,domain,single_market"})
+    competitors = only(competitors, only_name)
     ids = ",".join(c["id"] for c in competitors)
     if not ids:
         return competitors, []
@@ -252,6 +254,7 @@ def main() -> int:
     ap.add_argument("--week", help="ISO date inside the briefing week. Default this week.")
     ap.add_argument("--platform", choices=sorted(sp.ACTORS), help="collect one platform only")
     ap.add_argument("--dry-run", action="store_true", help="collect and print, write nothing")
+    ap.add_argument("--competitor", help="collect this one competitor only, by name")
     ap.add_argument("--backfill-weeks", type=int, default=0, metavar="N",
                     help="also write the N weeks before --week, from one run per platform, "
                          "so pressure has a social baseline from the first briefing")
@@ -270,7 +273,7 @@ def main() -> int:
     client = clients[0]
     wk = parse_week(args.week)
     since, until = sp.window(wk)
-    competitors, channels = load_channels(sb, client["id"], args.platform)
+    competitors, channels = load_channels(sb, client["id"], args.platform, args.competitor)
     print(f"client: {client['name']} · week of {wk} · posts from {since:%Y-%m-%d} to "
           f"{until:%Y-%m-%d} · {len(channels)} channels")
     if not channels:

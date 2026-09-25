@@ -133,6 +133,12 @@ main{overflow-y:auto}
 .chip{font-family:var(--font-mono);font-size:10px;letter-spacing:.08em;text-transform:uppercase;
   color:var(--muted);border:1px solid var(--line);background:var(--surface);
   padding:5px 11px;border-radius:99px;white-space:nowrap}
+.card.trends{flex-direction:row;justify-content:space-between;align-items:center;gap:16px;flex-wrap:wrap}
+.trends .terms{display:flex;gap:6px;flex-wrap:wrap}
+.trends .terms .chip{text-transform:none;letter-spacing:0;font-size:12px}
+a.trends-go{display:inline-flex;align-items:center;gap:8px;border:1px solid var(--line);border-radius:8px;
+  padding:10px 18px;font-weight:600;font-size:13px;color:var(--ink);text-decoration:none;white-space:nowrap}
+a.trends-go:hover{border-color:var(--accent);color:var(--accent)}
 .panel{display:none;padding:34px;max-width:1080px}
 .panel.on{display:block}
 /* An embedded analysis brings its own layout. Give it the full width and
@@ -621,7 +627,7 @@ async function boot(){
 async function loadContext(portal, week){
   const q = async p => { try { const { data, error } = await p; return error ? [] : (data || []); } catch(e){ return []; } };
   const [competitors, channels, pressure, profiles, ads, posts, kws, geo] = await Promise.all([
-    q(portal.from('competitors').select('id,name')),
+    q(portal.from('competitors').select('id,name,is_client')),
     q(portal.from('channels').select('id,competitor_id,platform,scope,handle')),
     q(portal.from('pressure_weekly').select('week_of,competitor_id,score,status,method,components').order('week_of')),
     q(portal.from('signals').select('week_of,competitor_id,channel_id,platform:data->>platform,followers:data->>followers,posts:data->>posts_in_week,eng:data->>avg_engagement,capped:data->>capped')
@@ -634,10 +640,15 @@ async function loadContext(portal, week){
         .in('signal_type',['tracked_keyword_positions','client_keyword_positions']).eq('week_of', week)),
     q(portal.from('ad_geo_weekly').select('competitor_id,week_of,total_available,dc_landing,dc_explicit,regional,other_market').order('week_of')),
   ]);
-  const names = Object.fromEntries(competitors.map(c => [c.id, c.name]));
-  const order = competitors.map(c => c.name).sort((a, b) => a.localeCompare(b));
+  /* The client's own row is a benchmark: collected like a competitor, shown only where
+     it is labelled "you" (radar, amenity map). Leaving it out of `names` keeps it out of
+     every feed, chart and table that iterates competitors. */
+  const me = competitors.find(c => c.is_client) || null;
+  const names = Object.fromEntries(competitors.filter(c => !c.is_client).map(c => [c.id, c.name]));
+  const order = competitors.filter(c => !c.is_client).map(c => c.name).sort((a, b) => a.localeCompare(b));
   const color = Object.fromEntries(order.map((n, i) => [n, `var(--s${(i % 5) + 1})`]));
-  return { week, competitors, channels, pressure, profiles, ads, posts, kws, geo, names, order, color, from: addDays(week, -7) };
+  const self = me ? { id: me.id, name: me.name, label: me.name + ' (you)', color: 'var(--ink)' } : null;
+  return { week, competitors, channels, pressure, profiles, ads, posts, kws, geo, names, order, color, self, from: addDays(week, -7) };
 }
 
 let CLIENT_REC = null;
@@ -1067,6 +1078,33 @@ function overviewPanel(b){
   ${cov.length ? sec('What we could not see', '', `<ul class="cover">${cov.map(c => `<li>${esc(c)}</li>`).join('')}</ul>`) : ''}`;
 }
 
+/* Google Trends, as the internal tool links it: the five biggest non-branded terms we
+   track, ranked by DC search volume, over 90 days. Geography is the Washington DC
+   metro (Nielsen DMA 511, which Trends calls US-DC-511), never the whole US. A term
+   carrying any tracked brand's name is left out. */
+const TRENDS_GEO = 'US-DC-511';
+function trendsTerms(ctx){
+  const mine = (ctx.kws || []).find(k => k.signal_type === 'client_keyword_positions');
+  const brands = [...ctx.order, ...(ctx.self ? [ctx.self.name] : []), 'bouldering project']
+    .map(n => String(n).toLowerCase());
+  const seen = new Set();
+  return (Array.isArray(mine && mine.keywords) ? mine.keywords : [])
+    .filter(k => k && k.keyword && !brands.some(b => k.keyword.toLowerCase().includes(b)))
+    .filter(k => { const t = k.keyword.toLowerCase(); if(seen.has(t)) return false; seen.add(t); return true; })
+    .sort((a, b) => (num(b.volume) ?? -1) - (num(a.volume) ?? -1))
+    .slice(0, 5).map(k => k.keyword);
+}
+function trendsBlock(ctx){
+  const terms = trendsTerms(ctx);
+  if(!terms.length) return '';
+  const url = 'https://trends.google.com/trends/explore?date=today%203-m&geo=' + TRENDS_GEO
+    + '&q=' + terms.map(encodeURIComponent).join(',') + '&hl=en';
+  return sec('Search interest', 'Google Trends · Washington DC metro · 90 days',
+    `<div class="card trends"><div class="terms">${terms.map(t => `<span class="chip">${esc(t)}</span>`).join('')}</div>
+      <a class="trends-go" href="${esc(url)}" target="_blank" rel="noopener noreferrer">Open in Google Trends ↗</a></div>
+    <p class="fine">The five non-branded terms we track with the most DC searches. Trends scores each term from 0 to 100 against the busiest term in the set, so read the lines for direction and timing, never as search counts.</p>`);
+}
+
 /* ── Search ── */
 function keywordGrid(ctx){
   const kws = ctx.kws || [];
@@ -1176,21 +1214,25 @@ function radarSvg(ctx, week, picks){
   const W = 440, cx = 220, cy = 205, R = 150;
   const ang = i => (-90 + i * 72) * Math.PI / 180;
   const pt = (i, v) => [cx + Math.cos(ang(i)) * R * v / 100, cy + Math.sin(ang(i)) * R * v / 100];
-  const rows = picks.map(n => (ctx.pressure || []).find(r => String(r.week_of).slice(0,10) === week && ctx.names[r.competitor_id] === n)).filter(Boolean);
+  const SELF = '__self__';
+  const nameOf = r => ctx.self && r.competitor_id === ctx.self.id ? ctx.self.label : ctx.names[r.competitor_id];
+  const colorOf = n => ctx.self && n === ctx.self.label ? ctx.self.color : ctx.color[n];
+  const rows = picks.map(n => (ctx.pressure || []).find(r => String(r.week_of).slice(0,10) === week &&
+    (n === SELF ? ctx.self && r.competitor_id === ctx.self.id : ctx.names[r.competitor_id] === n))).filter(Boolean);
   const rings = [25, 50, 75, 100].map(v => `<polygon class="ring${v === 50 ? ' mid' : ''}" points="${RADAR_AX.map((_, i) => pt(i, v).join(',')).join(' ')}"/>`).join('');
   const spokes = RADAR_AX.map((_, i) => { const [x, y] = pt(i, 100); return `<line class="spoke" x1="${cx}" y1="${cy}" x2="${x}" y2="${y}"/>`; }).join('');
   const labels = RADAR_AX.map(([k, l], i) => { const [x, y] = pt(i, 118);
     const none = rows.length && rows.every(r => !(r.components || {})[k] || typeof r.components[k].score !== 'number');
     return `<text class="axl" x="${x}" y="${y + 4}" text-anchor="middle">${esc(l)}${none ? ' · not yet' : ''}</text>`; }).join('');
   const ticks = [50, 100].map(v => `<text x="${cx + 4}" y="${cy - R * v / 100 + 12}">${v}</text>`).join('');
-  const polys = rows.map(r => { const n = ctx.names[r.competitor_id], c = ctx.color[n];
+  const polys = rows.map(r => { const n = nameOf(r), c = colorOf(n);
     const pts = RADAR_AX.map(([k], i) => { const x = (r.components || {})[k]; return x && typeof x.score === 'number' ? pt(i, x.score) : null; }).filter(Boolean);
     const dots = pts.map(p => `<circle cx="${p[0].toFixed(1)}" cy="${p[1].toFixed(1)}" r="4" fill="${c}" stroke="var(--surface)" stroke-width="2"/>`).join('');
     return `<polygon class="poly" points="${pts.map(p => p.map(v => v.toFixed(1)).join(',')).join(' ')}" fill="${c}" fill-opacity=".14" stroke="${c}"><title>${esc(n)}</title></polygon>${dots}`; }).join('');
-  const table = tableView(['Competitor', ...RADAR_AX.map(a => a[1])], rows.map(r => [ctx.names[r.competitor_id],
+  const table = tableView(['Competitor', ...RADAR_AX.map(a => a[1])], rows.map(r => [nameOf(r),
     ...RADAR_AX.map(([k]) => { const x = (r.components || {})[k]; return x && typeof x.score === 'number' ? x.score : 'not yet'; })]));
   return `<div class="radar-wrap"><svg viewBox="0 0 ${W} 410" role="img" aria-label="Channel scores by competitor">${rings}${spokes}${ticks}${polys}${labels}</svg>
-    <div>${legend(rows.map(r => ctx.names[r.competitor_id]), ctx.color)}
+    <div>${legend(rows.map(nameOf), Object.assign({}, ctx.color, ctx.self ? { [ctx.self.label]: ctx.self.color } : {}))}
       <p class="fine">Dashed ring: 50, a normal week. Further out means further above that competitor's normal on that channel.</p>${table}</div></div>`;
 }
 function radarBlock(ctx, b){
@@ -1198,7 +1240,9 @@ function radarBlock(ctx, b){
   if(!weeks.length) return '';
   const comps = ((b.full_report || {}).pressure || {}).competitors || [];
   const top = [...comps].sort((x, y) => (y.score ?? -1) - (x.score ?? -1)).slice(0, 3).map(c => c.competitor);
-  const opt = (sel) => `<option value="">None</option>` + ctx.order.map(n => `<option${n === sel ? ' selected' : ''}>${esc(n)}</option>`).join('');
+  const selfScored = ctx.self && (ctx.pressure || []).some(r => r.competitor_id === ctx.self.id && r.components && Object.keys(r.components).length);
+  const opt = (sel) => `<option value="">None</option>` + (selfScored ? `<option value="__self__">${esc(ctx.self.label)}</option>` : '')
+    + ctx.order.map(n => `<option${n === sel ? ' selected' : ''}>${esc(n)}</option>`).join('');
   return sec('Channel comparison', 'competitive score per channel',
     `<div class="chart" id="radar" data-week="${esc(weeks[0])}">
       <div class="pick">
@@ -1246,8 +1290,17 @@ function amenityBlock(client, ctx){
     texts[n].set('ad:' + msgKey(a), t); });
   (ctx.posts || []).forEach(p => { const n = ctx.names[p.competitor_id]; if(!n || !p.text) return;
     texts[n].set('post:' + p.text.replace(/\s+/g,' ').trim().toLowerCase().slice(0,160), p.text); });
+  const mine = new Map();
+  if(ctx.self){
+    (ctx.ads || []).filter(a => a.competitor_id === ctx.self.id && String(a.recruit) !== 'true').forEach(a =>
+      mine.set('ad:' + msgKey(a), [a.title, a.body, ...Object.values(a.scanned || {})].filter(v => typeof v === 'string').join(' ')));
+    (ctx.posts || []).filter(p => p.competitor_id === ctx.self.id && p.text).forEach(p =>
+      mine.set('post:' + p.text.replace(/\s+/g,' ').trim().toLowerCase().slice(0,160), p.text));
+  }
   const counts = am.map(a => { const r = rx(a);
     return Object.fromEntries(ctx.order.map(n => [n, [...texts[n].values()].filter(t => r.test(t)).length])); });
+  const myCounts = am.map(a => { const r = rx(a); return [...mine.values()].filter(t => r.test(t)).length; });
+  const showMine = mine.size > 0;
   const max = Math.max(1, ...counts.flatMap(c => Object.values(c)));
   const dot = (v, color) => { if(!v) return `<span style="color:var(--line)">·</span>`;
     const r = 4 + 9 * Math.sqrt(v / max);
@@ -1257,13 +1310,13 @@ function amenityBlock(client, ctx){
     const lane = a.client_offers === true && promoters <= 1 ? `<span class="lane">Open lane</span>`
                : promoters >= 4 ? `<span class="lane crowd">Crowded</span>` : '';
     const you = a.client_offers === true ? '● yes' : a.client_offers === false ? '○ no' : '? unknown';
-    return `<tr><td class="nm">${esc(a.label)}${lane}</td><td class="c you">${you}</td>
+    return `<tr><td class="nm">${esc(a.label)}${lane}</td><td class="c you">${you}</td>${showMine ? `<td class="c">${dot(myCounts[i], 'var(--ink)')}</td>` : ''}
       ${ctx.order.map(n => `<td class="c">${dot(counts[i][n], ctx.color[n])}</td>`).join('')}</tr>`;
   }).join('');
   return sec('Amenities being promoted', 'ads running now and posts this week',
-    `<div class="tbl-wrap"><table class="scores amen"><thead><tr><th>Amenity</th><th>You offer</th>${ctx.order.map(n => `<th style="text-align:center">${esc(n)}</th>`).join('')}</tr></thead>
+    `<div class="tbl-wrap"><table class="scores amen"><thead><tr><th>Amenity</th><th>You offer</th>${showMine ? '<th style="text-align:center">You promote</th>' : ''}${ctx.order.map(n => `<th style="text-align:center">${esc(n)}</th>`).join('')}</tr></thead>
     <tbody>${rows}</tbody></table></div>
-    <p class="fine">Each dot counts the distinct ad messages and posts that mention the amenity; bigger means more. Open lane: something you offer that at most one competitor is promoting. "You offer" comes from your own brief; "unknown" means we have not confirmed it.</p>`);
+    <p class="fine">Each dot counts the distinct ad messages and posts that mention the amenity; bigger means more. Open lane: something you offer that at most one competitor is promoting. "You offer" comes from your own brief; "unknown" means we have not confirmed it.${showMine ? ' "You promote" counts your own ads and posts the same way.' : ''}</p>`);
 }
 
 /* ── Paid: every running ad message, filterable and sortable ── */
@@ -1374,7 +1427,7 @@ function briefingPanel(id, b){
   const notes = (SECTION_KEYS[id] || []).map(([k, l]) => itemsBlock(k, l, sections[k])).join('');
   if(id === 'overview') return overviewPanel(b);
   const recs = recsBlock(id, sections.recommendations);
-  if(id === 'search') return keywordGrid(ctx) + notes + recs;
+  if(id === 'search') return keywordGrid(ctx) + trendsBlock(ctx) + notes + recs;
   if(id === 'paid') return paidCharts(ctx) + notes + recs;
   if(id === 'social') return socialCharts(ctx) + notes + recs;
   if(id === 'owned') return notes + recs;

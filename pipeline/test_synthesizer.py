@@ -507,6 +507,26 @@ def test_promotions_get_channel_and_dates_from_their_signals():
     assert p["first_seen"] == "2026-09-18" and p["last_seen"] == "2026-09-21"
 
 
+def test_client_row_stays_out_of_pressure_and_digest():
+    me = {"id": "c-bp", "name": "Bouldering Project", "single_market": False, "is_client": True}
+    mine = [sig("bp1", "ad_active", "c-bp", scope="local",
+                data={"body": "Columbia Heights is coming", "start_date": "2026-09-19"})]
+    base = {"signals": window(), "competitors": COMPS, "ran": {"ads", "web", "email", "search"},
+            "email_channels": EMAIL_CHANNELS, "watch_terms": ["columbia heights"],
+            "social_channels": {}, "history": {}}
+    alone, _ = sy.compute_pressure(dict(base), WK)
+    withme, _ = sy.compute_pressure(dict(base, client_self=me, self_signals=mine,
+                                         self_social_channels={}), WK)
+    assert alone["market"] == withme["market"] and alone["competitors"] == withme["competitors"]
+    assert alone["driver"] == withme["driver"]
+    b = withme["benchmark"]
+    assert b["competitor"] == "Bouldering Project" and b["event_points"] == 0, \
+        "its own Columbia Heights posts are not a watch-term event"
+    assert "c-bp" not in json.dumps(sy.pressure_for_digest(withme)), "the Analyst never sees it"
+    rows = sy.pressure_rows("cl", WK, withme)
+    assert any(r["competitor_id"] == "c-bp" for r in rows), "stored for the dashboard"
+
+
 def test_source_url_is_never_the_models():
     a = json.loads(json.dumps(GOOD_ANALYSIS))
     a["developments"][2]["source_url"] = "https://movementgyms.com/made-up"
