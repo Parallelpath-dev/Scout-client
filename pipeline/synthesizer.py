@@ -1281,6 +1281,9 @@ def main() -> int:
     ap.add_argument("--digest-only", action="store_true",
                     help="build and print the digest, call no model, write nothing")
     ap.add_argument("--dry-run", action="store_true", help="call the model, write nothing")
+    ap.add_argument("--rescore", action="store_true",
+                    help="recompute every pressure row for the week from the stored signals "
+                         "and refresh the briefing's scores; no model, briefing text untouched")
     ap.add_argument("--benchmark-only", action="store_true",
                     help="score the client's own benchmark row for the week and store that "
                          "row only: no model, no briefing, competitors' rows untouched")
@@ -1336,6 +1339,37 @@ def main() -> int:
               f"components={ {k: v.get('score') for k, v in (b.get('components') or {}).items()} } "
               "(kept out of the market score and the digest)")
 
+    if args.rescore:
+        rows = pressure_rows(client["id"], wk, pressure)
+        sb.upsert("portal", "pressure_weekly", rows,
+                  on_conflict="client_id,competitor_id,week_of")
+        found = sb.get("portal", "briefings", {
+            "client_id": f"eq.{client['id']}", "week_of": f"eq.{wk.isoformat()}",
+            "select": "id,summary,full_report,pressure_score"})
+        if not found:
+            print(f"[synth] stored {len(rows)} pressure rows; no briefing for {wk} to refresh")
+            return 0
+        b = found[0]
+        fr = b.get("full_report") or {}
+        old_p = fr.get("pressure") or {}
+        score = pressure["market"]["score"]
+        prior = old_p.get("prior_score")
+        fr["pressure"] = dict(old_p, status=pressure["market"]["status"], score=score,
+                              trend=pressure["market"]["trend"], market=pressure["market"],
+                              competitors=pressure["competitors"], driver=pressure["driver"],
+                              delta=(score - prior) if score is not None and prior is not None
+                              else None)
+        fr.setdefault("validation", {}).setdefault("hand_edits", []).append(
+            f"{datetime.now(timezone.utc):%Y-%m-%d} rescored from stored signals (--rescore)")
+        sb.patch("portal", "briefings", {"id": f"eq.{b['id']}"},
+                 {"pressure_score": score, "full_report": fr})
+        before = {c.get("competitor"): c.get("score") for c in old_p.get("competitors") or []}
+        for c in pressure["competitors"]:
+            if before.get(c["competitor"]) != c["score"]:
+                print(f"[synth]   {c['competitor']}: {before.get(c['competitor'])} -> {c['score']}")
+        print(f"[synth] market {b.get('pressure_score')} -> {score}. Briefing text is unchanged: "
+              "check any score the summary quotes.")
+        return 0
     if args.benchmark_only:
         me = ctx.get("client_self")
         if not me or not pressure.get("benchmark"):
