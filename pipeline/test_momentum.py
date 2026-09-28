@@ -259,6 +259,20 @@ def test_benchmark_is_scored_beside_never_among():
     assert b["event_points"] == 0
 
 
+def test_email_scores_with_one_live_peer():
+    # Jack, 28 Sep: Onelife and Movement are both sending, so neither reads n/a. Two live
+    # lists is one peer each; that comparison is weak, so it may not read off the chart.
+    per = {"big": {"metrics": {"email": 4.5}, "events": []},
+           "nat": {"metrics": {"email": 0.5}, "events": []},
+           "loc": {"metrics": {}, "events": []}}
+    p = mo.score_week(per, {}, COMPS)
+    by = {c["competitor"]: c["components"]["email"] for c in p["competitors"]}
+    assert by["Onelife"]["basis"] == "set" and 55 < by["Onelife"]["score"] < 80, by
+    assert by["Movement"]["basis"] == "set" and 20 < by["Movement"]["score"] < 45, by
+    assert by["VIDA"]["basis"] == "not collected", "a list that never delivered stays unknown"
+    assert mo._set_z("ads_launched", 3.0, [1.0]) is None, "other metrics still need two peers"
+
+
 def main() -> int:
     tests = [v for k, v in sorted(globals().items()) if k.startswith("test_")]
     failed = 0

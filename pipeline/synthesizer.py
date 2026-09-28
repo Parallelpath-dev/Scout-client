@@ -134,6 +134,8 @@ def build_digest(
     wk: date,
     email_live: bool = True,
     unreadable: list[str] | None = None,
+    email_signed_up: set[str] | None = None,
+    email_since: str | None = None,
 ) -> dict[str, Any]:
     """Everything the Analyst is allowed to see, and nothing it is not.
 
@@ -341,12 +343,22 @@ def build_digest(
     counts: dict[str, int] = {}
     for s in signals:
         counts[s["signal_type"]] = counts.get(s["signal_type"], 0) + 1
-    no_email = sorted(c["name"] for c in competitors if c["id"] not in email_channels)
+    signed_up = email_channels if email_signed_up is None else (email_signed_up | email_channels)
+    no_email = sorted(c["name"] for c in competitors if c["id"] not in signed_up)
+    pending = sorted(c["name"] for c in competitors
+                     if c["id"] in signed_up and c["id"] not in email_channels)
     emailed = {s.get("competitor_id") for s in signals if s["signal_type"] == "email"}
     silent = sorted(c["name"] for c in competitors
                     if c["id"] in email_channels and c["id"] not in emailed)
     if no_email:
         coverage.append(f"No email list to monitor for {', '.join(no_email)}.")
+    if pending:
+        coverage.append(f"No email has arrived yet from the {', '.join(pending)} sign-up"
+                        f"{'s' if len(pending) > 1 else ''}, so their email is unknown, not zero.")
+    if email_live and email_since and email_since > (wk - timedelta(days=7)).isoformat():
+        d = date.fromisoformat(email_since)
+        coverage.append(f"Email monitoring began {d:%b} {d.day}, so this week's email covers "
+                        f"{d:%b} {d.day} onward.")
     if not email_live:
         coverage.append("Email monitoring began after the week this briefing covers, so "
                         "competitor email is not reflected yet.")
@@ -1180,11 +1192,20 @@ def load(sb: Supa, slug: str, wk: date) -> dict[str, Any]:
     # week the briefing covers began: week W reads email sent in [W-7, W) (see
     # week_window.py). Before the webhook existed, no email is unknown, not zero, and a
     # zero there would sit in every competitor's median for a quarter.
-    first_mail = sb.get("portal", "inbound_emails", {
-        "client_id": f"eq.{cid}",
-        "select": "received_at", "order": "received_at.asc", "limit": "1"})
+    #
+    # A list counts as live once it has delivered at least one message before the week
+    # ends. A live list with no mail this week is a zero; a list that has never delivered
+    # (a sign-up that never confirmed) stays unknown, never zero.
+    delivered = sb.get("portal", "inbound_emails", {
+        "competitor_id": f"in.({comp_ids})", "match_status": "eq.matched",
+        "sent_at": f"lt.{wk.isoformat()}",
+        "select": "competitor_id,received_at", "order": "received_at.asc"})
+    live_email = {r["competitor_id"] for r in delivered if r.get("competitor_id")}
+    first_mail = min((str(r["received_at"])[:10] for r in delivered), default=None)
     ran = set()
-    if first_mail and str(first_mail[0]["received_at"])[:10] <= (wk - timedelta(days=7)).isoformat():
+    # Email runs from the first week the inbox was receiving, even part of it. The
+    # coverage note says which days the week's email covers.
+    if first_mail and first_mail < wk.isoformat():
         ran.add("email")
     if rollups:
         ran.add("ads")
@@ -1197,7 +1218,9 @@ def load(sb: Supa, slug: str, wk: date) -> dict[str, Any]:
     return {
         "client": client, "competitors": competitors, "rollups": rollups,
         "prior_rollups": prior_rollups, "signals": signals,
-        "email_channels": {c["competitor_id"] for c in email_ch},
+        "email_channels": {c["competitor_id"] for c in email_ch} & live_email,
+        "email_signed_up": {c["competitor_id"] for c in email_ch},
+        "email_since": first_mail,
         "prior_score": prior[0]["pressure_score"] if prior else None,
         "history": history, "ran": ran, "unreadable": unreadable,
         "social_channels": {c: {x["id"] for x in social_ch if x["competitor_id"] == c}
@@ -1291,7 +1314,9 @@ def main() -> int:
 
     digest = build_digest(ctx["signals"], ctx["competitors"], ctx["rollups"],
                           ctx["prior_rollups"], ctx["email_channels"], client["name"], wk,
-                          email_live="email" in ctx["ran"], unreadable=ctx.get("unreadable"))
+                          email_live="email" in ctx["ran"], unreadable=ctx.get("unreadable"),
+                          email_signed_up=ctx.get("email_signed_up"),
+                          email_since=ctx.get("email_since"))
     print(f"[synth] {client['name']} · week of {wk} · profile={client.get('output_profile')}")
     print(f"[synth] signals: {json.dumps(digest['signal_counts'])}")
     print(f"[synth] ranked changes: {len(digest['ranked_changes'])} · "

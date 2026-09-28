@@ -51,6 +51,10 @@ import { createClient } from "jsr:@supabase/supabase-js@2";
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SERVICE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 const SIGNING_SECRET = Deno.env.get("PORTAL_INBOUND_SIGNING_SECRET") ?? "";
+// Resend's email.received webhook carries metadata only: no body, no headers. The body
+// is fetched from the Received Emails API by the event's email_id. Without this key every
+// message is stored as a subject line and classified blind.
+const RESEND_API_KEY = Deno.env.get("RESEND_API_KEY") ?? "";
 
 // Mail from our own domain is our own doing — bounce notices, the signup confirmations
 // we generated ourselves, anything looping. Stored, never counted.
@@ -170,6 +174,81 @@ function toISO(v: unknown): string | null {
   return Number.isNaN(d.getTime()) ? null : d.toISOString();
 }
 
+// ── body fetch ──────────────────────────────────────────────────────────────
+// GET /emails/receiving/{id}. Best effort: a failure leaves the body null and the message
+// stored, and the backfill route below can fetch it later.
+
+type Body = { text: string | null; html: string | null; headers: Record<string, string> };
+
+async function fetchBody(emailId: string): Promise<Body | null> {
+  if (!RESEND_API_KEY) {
+    console.warn("RESEND_API_KEY is not set, so email bodies cannot be fetched.");
+    return null;
+  }
+  const ctl = new AbortController();
+  const t = setTimeout(() => ctl.abort(), 10_000);
+  try {
+    const r = await fetch(`https://api.resend.com/emails/receiving/${encodeURIComponent(emailId)}`, {
+      headers: { Authorization: `Bearer ${RESEND_API_KEY}` },
+      signal: ctl.signal,
+    });
+    if (!r.ok) {
+      console.error(`body fetch ${emailId} failed: ${r.status} ${(await r.text()).slice(0, 200)}`);
+      return null;
+    }
+    const j = await r.json() as Record<string, unknown>;
+    return {
+      text: typeof j.text === "string" ? j.text : null,
+      html: typeof j.html === "string" ? j.html : null,
+      headers: normaliseHeaders(j.headers),
+    };
+  } catch (e) {
+    console.error(`body fetch ${emailId} errored:`, e);
+    return null;
+  } finally {
+    clearTimeout(t);
+  }
+}
+
+// ── backfill ────────────────────────────────────────────────────────────────
+// POST {"type":"portal.backfill","token":"..."} fills in bodies for stored rows that have
+// none, and clears classified_at so the next classify run reads the real text. The token
+// is compared with portal.internal_settings('backfill_token'); the route takes no ids, so
+// the most it can ever do is re-fetch our own messages.
+
+async function backfill(token: unknown): Promise<Response> {
+  const { data: cfg } = await db.from("internal_settings").select("value").eq("key", "backfill_token")
+    .maybeSingle();
+  if (!cfg?.value || typeof token !== "string" || !timingSafeEqual(token, String(cfg.value))) {
+    return new Response("forbidden", { status: 403 });
+  }
+  const { data: rows, error } = await db.from("inbound_emails")
+    .select("id, raw, message_id, sent_at")
+    .is("text_body", null).is("html_body", null)
+    .order("received_at", { ascending: true }).limit(50);
+  if (error) return new Response(JSON.stringify({ ok: false, error: error.message }), { status: 500 });
+  const out = { filled: 0, failed: 0, skipped: 0 };
+  for (const row of rows ?? []) {
+    const d = ((row.raw as Record<string, unknown>)?.data ?? {}) as Record<string, unknown>;
+    const id = typeof d.email_id === "string" ? d.email_id : typeof d.id === "string" ? d.id : null;
+    if (!id) { out.skipped++; continue; }
+    const b = await fetchBody(id);
+    if (!b || (!b.text && !b.html)) { out.failed++; continue; }
+    const upd: Record<string, unknown> = {
+      text_body: b.text, html_body: b.html, headers: b.headers, classified_at: null,
+    };
+    if (!row.message_id) {
+      upd.message_id = b.headers["message-id"] ?? (typeof d.message_id === "string" ? d.message_id : null);
+    }
+    if (b.headers["date"]) upd.sent_at = toISO(b.headers["date"]) ?? row.sent_at;
+    const { error: e2 } = await db.from("inbound_emails").update(upd).eq("id", row.id);
+    if (e2) { console.error("backfill update failed", row.id, e2); out.failed++; } else out.filled++;
+  }
+  return new Response(JSON.stringify({ ok: true, ...out }), {
+    status: 200, headers: { "content-type": "application/json" },
+  });
+}
+
 // ── handler ─────────────────────────────────────────────────────────────────
 
 Deno.serve(async (req) => {
@@ -179,11 +258,6 @@ Deno.serve(async (req) => {
 
   const body = await req.text();
 
-  if (!(await verifySignature(req, body))) {
-    console.error("signature verification failed");
-    return new Response("invalid signature", { status: 401 });
-  }
-
   let payload: Record<string, unknown>;
   try {
     payload = JSON.parse(body);
@@ -191,6 +265,14 @@ Deno.serve(async (req) => {
     // Malformed JSON will be malformed on every retry. 400 so Resend stops.
     return new Response("bad json", { status: 400 });
   }
+
+  // The backfill route authenticates with its own token (checked in backfill()).
+  if (payload.type !== "portal.backfill" && !(await verifySignature(req, body))) {
+    console.error("signature verification failed");
+    return new Response("invalid signature", { status: 401 });
+  }
+
+  if (payload.type === "portal.backfill") return await backfill(payload.token);
 
   const eventType = String(payload.type ?? "");
   if (eventType !== "email.received") {
@@ -203,23 +285,26 @@ Deno.serve(async (req) => {
   }
 
   const data = (payload.data ?? {}) as Record<string, unknown>;
-  const headers = normaliseHeaders(data.headers);
+  const emailId = typeof data.email_id === "string" ? data.email_id
+    : typeof data.id === "string" ? data.id : null;
+  const fetched = emailId ? await fetchBody(emailId) : null;
+  const headers = { ...normaliseHeaders(data.headers), ...(fetched?.headers ?? {}) };
 
   const toAddress = firstAddress(data.to);
   const fromAddress = addressOf(data.from);
   const fromDomain = fromAddress?.split("@")[1] ?? null;
 
   const record = {
-    message_id: headers["message-id"] ?? null,
-    provider_id: typeof data.id === "string" ? data.id : null,
+    message_id: headers["message-id"] ?? (typeof data.message_id === "string" ? data.message_id : null),
+    provider_id: emailId,
     sent_at: toISO(headers["date"] ?? data.created_at ?? payload.created_at),
     to_address: toAddress,
     from_address: fromAddress,
     from_domain: fromDomain,
     from_name: displayNameOf(data.from),
     subject: typeof data.subject === "string" ? data.subject : null,
-    text_body: typeof data.text === "string" ? data.text : null,
-    html_body: typeof data.html === "string" ? data.html : null,
+    text_body: fetched?.text ?? (typeof data.text === "string" ? data.text : null),
+    html_body: fetched?.html ?? (typeof data.html === "string" ? data.html : null),
     headers,
     client_id: null as string | null,
     competitor_id: null as string | null,

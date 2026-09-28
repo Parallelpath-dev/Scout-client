@@ -288,6 +288,10 @@ FULL_OWN = 4              # weeks of own history at which the set drops out enti
 # A count of running ads is mostly the size of the advertiser (Onelife: 266 against a
 # set median near 22), so it joins through the competitor's own history from week 2.
 NO_SET = {"ads_active"}
+# Peers needed before a metric is compared with the set. Email has few live lists in a
+# small set (two this week), so one peer is enough there until own history takes over.
+MIN_PEERS = {"email": 1}
+SPARSE_LOG_FLOOR = 1.0
 
 
 def _set_z(k: str, v: float, peers: list[float]) -> float | None:
@@ -297,10 +301,13 @@ def _set_z(k: str, v: float, peers: list[float]) -> float | None:
     against a set median of two reads like a surge. On the log scale 11 launches
     against a median of two reads about two usual swings up, not off the chart.
     """
-    if len(peers) < 2 or k in NO_SET:
+    if len(peers) < MIN_PEERS.get(k, 2) or k in NO_SET:
         return None
+    # One peer has no spread to measure, so the floor carries the whole comparison. Widen
+    # it there: a single other brand is weak evidence and must not read as off the chart.
+    floor = LOG_FLOOR if len(peers) >= 2 else SPARSE_LOG_FLOOR
     return robust_z(math.log1p(v), [math.log1p(x) for x in peers],
-                    abs_floor=LOG_FLOOR, min_history=2)
+                    abs_floor=floor, min_history=MIN_PEERS.get(k, 2))
 
 
 def _blend(own: float | None, ref: float | None, n_own: int) -> tuple[float | None, str]:
