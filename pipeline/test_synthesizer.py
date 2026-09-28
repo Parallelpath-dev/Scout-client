@@ -530,6 +530,18 @@ def test_client_row_stays_out_of_pressure_and_digest():
         "--benchmark-only never rewrites a competitor's or the market's row"
 
 
+def test_email_coverage_names_pending_signups_and_partial_week():
+    live = {c["id"] for c in COMPS[:1]}
+    signed = {c["id"] for c in COMPS[:3]}
+    d = sy.build_digest(window(), COMPS, ROLLUPS, PRIOR, live, "BP", WK, email_live=True,
+                        email_signed_up=signed, email_since=(WK - sy.timedelta(days=3)).isoformat())
+    cov = " ".join(d["coverage"])
+    pending = [c["name"] for c in COMPS[1:3]]
+    assert all(n in cov for n in pending) and "unknown, not zero" in cov, cov
+    assert "covers" in cov and "onward" in cov, cov
+    assert "began after the week" not in cov, cov
+
+
 def test_source_url_is_never_the_models():
     a = json.loads(json.dumps(GOOD_ANALYSIS))
     a["developments"][2]["source_url"] = "https://movementgyms.com/made-up"
