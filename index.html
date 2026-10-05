@@ -380,6 +380,27 @@ details.tv table{margin-top:8px}
 .promo .off + .off{border-top:1px solid var(--line);padding-top:8px}
 .promo .meta{font-family:var(--font-mono);font-size:10.5px;color:var(--muted);margin-top:4px;letter-spacing:.04em}
 .promo.none .off{color:var(--muted)}
+/* Owned channels */
+.grp-h{font-family:var(--font-display);font-size:13px;font-weight:700;letter-spacing:.12em;text-transform:uppercase;
+  color:var(--muted);margin:32px 0 12px;border-top:1px solid var(--line);padding-top:18px}
+.scores .sw{width:9px;height:9px;border-radius:2px;display:inline-block;margin-right:8px;vertical-align:middle}
+.scores .sub{font-family:var(--font-mono);font-size:10.5px;color:var(--muted);font-weight:400;margin-top:2px;letter-spacing:.04em}
+.scores .na{color:var(--muted)}
+.scores.owned td{vertical-align:top}
+.pcs{display:flex;flex-wrap:wrap;gap:5px}
+.pc{font-family:var(--font-mono);font-size:12px;font-variant-numeric:tabular-nums;padding:2px 7px;border-radius:5px;
+  border:1px solid var(--line);white-space:nowrap}
+.pc.add{border-color:var(--accent);color:var(--accent)}
+.pc.gone{text-decoration:line-through;color:var(--muted);border-style:dashed}
+.md{width:10px;height:10px;border-radius:50%;display:inline-block;vertical-align:middle;margin:1px}
+.md.k-promo{background:var(--accent)}
+.md.k-event{background:var(--ok)}
+.md.k-other{background:var(--birch)}
+.md.k-quiet{border:1.5px solid var(--muted);background:transparent}
+.scores.tl{table-layout:fixed;min-width:640px}
+.scores.tl th:first-child{width:190px}
+.scores.tl th.wk,.scores.tl td.dots{text-align:center;padding:10px 4px}
+.scores.tl .now{background:var(--accent-soft)}
 .amen td.c{text-align:center;padding:8px 6px}
 .amen svg{display:inline-block;vertical-align:middle}
 .amen .you{font-family:var(--font-mono);font-size:12px}
@@ -626,7 +647,7 @@ async function boot(){
 
 async function loadContext(portal, week){
   const q = async p => { try { const { data, error } = await p; return error ? [] : (data || []); } catch(e){ return []; } };
-  const [competitors, channels, pressure, profiles, ads, posts, kws, geo] = await Promise.all([
+  const [competitors, channels, pressure, profiles, ads, posts, kws, geo, emails, snaps, webChanges] = await Promise.all([
     q(portal.from('competitors').select('id,name,is_client')),
     q(portal.from('channels').select('id,competitor_id,platform,scope,handle')),
     q(portal.from('pressure_weekly').select('week_of,competitor_id,score,status,method,components').order('week_of')),
@@ -639,6 +660,12 @@ async function loadContext(portal, week){
     q(portal.from('signals').select('competitor_id,signal_type,keywords:data->keywords')
         .in('signal_type',['tracked_keyword_positions','client_keyword_positions']).eq('week_of', week)),
     q(portal.from('ad_geo_weekly').select('competitor_id,week_of,total_available,dc_landing,dc_explicit,regional,other_market').order('week_of')),
+    q(portal.from('signals').select('id,competitor_id,observed_at,subject:data->>subject,type:data->>email_type,types:data->email_types,prices:data->prices')
+        .eq('signal_type','email').gte('observed_at', addDays(week, -63)).order('observed_at', { ascending:false }).limit(500)),
+    q(portal.from('signals').select('competitor_id,channel_id,week_of,url:data->>url,label:data->>label,prices:data->prices')
+        .eq('signal_type','page_snapshot').order('week_of').limit(2000)),
+    q(portal.from('signals').select('competitor_id,week_of,url:data->>url,label:data->>label,head:data->>headline_type,types:data->change_types,mat:data->>materiality,before:data->price_before,after:data->price_after')
+        .eq('signal_type','web_change').order('week_of').limit(1000)),
   ]);
   /* The client's own row is a benchmark: collected like a competitor, shown only where
      it is labelled "you" (radar, amenity map). Leaving it out of `names` keeps it out of
@@ -648,7 +675,7 @@ async function loadContext(portal, week){
   const order = competitors.filter(c => !c.is_client).map(c => c.name).sort((a, b) => a.localeCompare(b));
   const color = Object.fromEntries(order.map((n, i) => [n, `var(--s${(i % 5) + 1})`]));
   const self = me ? { id: me.id, name: me.name, label: me.name + ' (you)', color: 'var(--ink)' } : null;
-  return { week, competitors, channels, pressure, profiles, ads, posts, kws, geo, names, order, color, self, from: addDays(week, -7) };
+  return { week, competitors, channels, pressure, profiles, ads, posts, kws, geo, emails, snaps, webChanges, names, order, color, self, from: addDays(week, -7) };
 }
 
 let CLIENT_REC = null;
@@ -1407,6 +1434,154 @@ function keyPanel(){
   </div>`;
 }
 
+/* ── Owned channels: website and email, side by side ──
+   Built from the collected rows, not the briefing text, so the tab has substance even in
+   a quiet week. The client appears as "(you)": its own sends and page checks are shown
+   for timing, never scored and never sent to the model. */
+const MAIL_KIND = {
+  offer:'promo', price:'promo', opening:'event', event:'event',
+  newsletter:'other', transactional:'quiet', confirmation:'quiet' };
+const MAIL_KEY = [['promo','Offer or price'],['event','Event or opening'],['other','Newsletter or other'],['quiet','Sign-up or transactional']];
+const mailTypes = e => { const t = Array.isArray(e.types) && e.types.length ? e.types : (e.type ? [e.type] : []); return t; };
+const mailKind = e => { const t = mailTypes(e); return MAIL_KIND[t[0]] || 'other'; };
+const mondayOf = d => { const t = new Date(String(d).slice(0,10) + 'T12:00:00Z'); const k = (t.getUTCDay() + 6) % 7; t.setUTCDate(t.getUTCDate() - k); return t.toISOString().slice(0,10); };
+const CHANGE_WORD = { price:'Price change', offer:'Offer change', opening:'Opening news', hours:'Hours change', cosmetic:'Wording or layout only' };
+const changeWord = c => CHANGE_WORD[c.head] || ((c.head || 'Page') + ' change');
+const material = c => c && c.head && c.head !== 'cosmetic';
+const pricesOf = v => (Array.isArray(v) ? v : []).map(String);
+const money = v => '$' + Number(v).toLocaleString('en-US');
+
+function ownedRows(ctx){
+  const rows = ctx.order.map(n => ({ id: Object.keys(ctx.names).find(k => ctx.names[k] === n), name:n, label:n, color:ctx.color[n], self:false }));
+  if(ctx.self) rows.push({ id:ctx.self.id, name:ctx.self.name, label:ctx.self.label, color:ctx.self.color, self:true });
+  return rows;
+}
+function mailStatus(ctx, id){
+  const hasList = (ctx.channels || []).some(c => c.competitor_id === id && c.platform === 'email');
+  if(!hasList) return 'none';
+  return (ctx.emails || []).some(e => e.competitor_id === id) ? 'live' : 'pending';
+}
+const STATUS_WORD = { live:'Live', pending:'Sign-up pending', none:'No list' };
+
+function ownedSnapshot(ctx, rows){
+  const wk = String(ctx.week).slice(0,10), from = ctx.from;
+  const body = rows.map(r => {
+    const pages = (ctx.snaps || []).filter(x => x.competitor_id === r.id && String(x.week_of).slice(0,10) === wk);
+    const ch = (ctx.webChanges || []).filter(x => x.competitor_id === r.id && String(x.week_of).slice(0,10) === wk && material(x));
+    const web = !pages.length ? '<span class="na">Not checked this week</span>'
+      : ch.length ? ch.map(c => `<b>${esc(c.label || 'Page')}</b>: ${esc(changeWord(c).toLowerCase())}`).join('<br>')
+      : `${pages.length} page${pages.length > 1 ? 's' : ''} checked, no price or offer change`;
+    const st = mailStatus(ctx, r.id);
+    const sent = (ctx.emails || []).filter(e => e.competitor_id === r.id && String(e.observed_at).slice(0,10) >= from && String(e.observed_at).slice(0,10) < wk);
+    const mail = st === 'none' ? '<span class="na">No list to monitor</span>'
+      : st === 'pending' ? '<span class="na">Sign-up pending, nothing received yet</span>'
+      : sent.length ? `${sent.length} sent: ${esc(sent.map(e => mailTypes(e)[0] || 'email').join(', '))}`
+      : 'None this week';
+    return `<tr><td class="nm"><span class="sw" style="background:${r.color}"></span>${esc(r.label)}</td><td>${web}</td><td>${mail}</td></tr>`;
+  }).join('');
+  return sec('This week on owned channels', `${fmtDate(from)} to ${fmtDate(addDays(wk, -1))}`,
+    `<div class="tbl-wrap"><table class="scores owned"><thead><tr><th>Competitor</th><th>Website</th><th>Email</th></tr></thead><tbody>${body}</tbody></table></div>
+    <p class="fine">Website checks run on the Monday that starts the week; email covers the seven days before it. "Sign-up pending" and "No list" are unknown, not zero.</p>`);
+}
+
+function pageWatch(ctx, rows){
+  const wk = String(ctx.week).slice(0,10);
+  const order = Object.fromEntries(rows.map((r, i) => [r.id, i]));
+  const byUrl = {};
+  (ctx.snaps || []).forEach(x => { if(order[x.competitor_id] == null) return;
+    (byUrl[x.url] = byUrl[x.url] || { id:x.competitor_id, label:x.label, url:x.url, weeks:[] }).weeks.push(String(x.week_of).slice(0,10)); });
+  const pages = Object.values(byUrl).sort((a, b) => order[a.id] - order[b.id] || String(a.label).localeCompare(String(b.label)));
+  if(!pages.length) return sec('Page watch', '', empty('No competitor pages have been checked yet.'));
+  const nameOf = id => (rows.find(r => r.id === id) || {}).label || '';
+  const body = pages.map(p => {
+    const first = p.weeks.slice().sort()[0], last = p.weeks.slice().sort().pop();
+    const all = (ctx.webChanges || []).filter(c => c.url === p.url).sort((a, b) => String(b.week_of).localeCompare(String(a.week_of)));
+    const ch = all.find(material) || null, minor = all[0] && !material(all[0]) ? all[0] : null;
+    const u = safeUrl(p.url);
+    const checked = last === wk ? 'This week' : `Last ${fmtDate(last)}`;
+    const lastCh = ch ? fmtDate(ch.week_of) : `None since ${fmtDate(first)}`;
+    const what = ch ? esc(changeWord(ch)) : '—';
+    const note = minor && (!ch || String(minor.week_of) > String(ch.week_of)) ? `<div class="sub">wording or layout ${esc(fmtDate(minor.week_of))}</div>` : '';
+    return `<tr><td class="nm">${esc(nameOf(p.id))}</td><td>${u ? `<a href="${esc(u)}" target="_blank" rel="noopener noreferrer">${esc(p.label || 'Page')} ↗</a>` : esc(p.label || 'Page')}</td>
+      <td class="n">${esc(checked)}</td><td class="n${ch && String(ch.week_of).slice(0,10) === wk ? ' hi' : ''}">${esc(lastCh)}</td><td>${what}${note}</td></tr>`;
+  }).join('');
+  return sec('Page watch', `${pages.length} pages, checked every Monday`,
+    `<div class="tbl-wrap"><table class="scores"><thead><tr><th>Competitor</th><th>Page</th><th>Checked</th><th>Last price or offer change</th><th>What changed</th></tr></thead><tbody>${body}</tbody></table></div>
+    <p class="fine">Every tracked page is listed, changed or not: unchanged means checked, not missing. Wording and layout edits are noted but not counted as changes.</p>`);
+}
+
+function priceBoard(ctx){
+  const wk = String(ctx.week).slice(0,10);
+  const latest = {};
+  (ctx.snaps || []).forEach(x => { if(!ctx.names[x.competitor_id]) return;
+    const w = String(x.week_of).slice(0,10); if(w > wk) return;
+    const k = x.url; (latest[k] = latest[k] || []).push({ w, x }); });
+  const boards = [], silent = [];
+  Object.values(latest).forEach(list => {
+    list.sort((a, b) => a.w.localeCompare(b.w));
+    const cur = list[list.length - 1], prev = list.length > 1 ? list[list.length - 2] : null;
+    const now = pricesOf(cur.x.prices), was = prev ? pricesOf(prev.x.prices) : null;
+    const n = ctx.names[cur.x.competitor_id];
+    if(!now.length && !(was || []).length){ silent.push(`${n} ${cur.x.label || ''}`.trim()); return; }
+    boards.push({ n, label: cur.x.label, url: cur.x.url, w: cur.w, now, added: was ? now.filter(v => !was.includes(v)) : [], removed: was ? was.filter(v => !now.includes(v)) : [], prevW: prev && prev.w });
+  });
+  boards.sort((a, b) => ctx.order.indexOf(a.n) - ctx.order.indexOf(b.n));
+  if(!boards.length) return sec('Price board', '', empty('No tracked page lists prices in its text yet.'));
+  const body = boards.map(b => {
+    const chips = b.now.map(v => `<span class="pc${b.added.includes(v) ? ' add' : ''}">${money(v)}</span>`).join('')
+      + b.removed.map(v => `<span class="pc gone">${money(v)}</span>`).join('');
+    const delta = !b.prevW ? 'First check'
+      : (b.added.length || b.removed.length)
+        ? [b.added.length ? `added ${b.added.map(money).join(', ')}` : '', b.removed.length ? `removed ${b.removed.map(money).join(', ')}` : ''].filter(Boolean).join(' · ')
+        : `No change since ${fmtDate(b.prevW)}`;
+    return `<tr><td class="nm"><span class="sw" style="background:${ctx.color[b.n]}"></span>${esc(b.n)}<div class="sub">${esc(b.label || '')}</div></td>
+      <td><div class="pcs">${chips}</div></td><td>${esc(delta)}</td></tr>`;
+  }).join('');
+  return sec('Price board', `as listed on ${fmtDate(wk)}`,
+    `<div class="tbl-wrap"><table class="scores"><thead><tr><th>Page</th><th>Prices on the page</th><th>Versus the week before</th></tr></thead><tbody>${body}</tbody></table></div>
+    <p class="fine">Every dollar figure in the page text, low to high, including fees and promos as well as monthly rates. Outlined in orange: new this week. Struck through: removed this week.${silent.length ? ` Not shown, no prices in their text: ${esc(silent.join(', '))}.` : ''}</p>`);
+}
+
+function mailTimeline(ctx, rows){
+  const wk = String(ctx.week).slice(0,10);
+  const weeks = Array.from({ length:8 }, (_, i) => addDays(wk, -7 * (7 - i)));
+  const head = weeks.map(w => `<th class="wk${w === wk ? ' now' : ''}">${esc(fmtDate(w))}</th>`).join('');
+  const body = rows.map(r => {
+    const st = mailStatus(ctx, r.id);
+    const mine = (ctx.emails || []).filter(e => e.competitor_id === r.id);
+    const cells = weeks.map(w => {
+      const inWk = mine.filter(e => mondayOf(e.observed_at) === w).sort((a, b) => String(a.observed_at).localeCompare(String(b.observed_at)));
+      return `<td class="dots${w === wk ? ' now' : ''}">${inWk.map(e => `<i class="md k-${mailKind(e)}" title="${esc(fmtDate(e.observed_at) + ' · ' + (mailTypes(e).join(', ') || 'email') + ' · ' + (e.subject || ''))}"></i>`).join('')}</td>`;
+    }).join('');
+    return `<tr><td class="nm"><span class="sw" style="background:${r.color}"></span>${esc(r.label)}<div class="sub">${esc(STATUS_WORD[st])}</div></td>${cells}</tr>`;
+  }).join('');
+  const key = `<div class="legend">${MAIL_KEY.map(([k, l]) => `<span><i class="md k-${k}"></i>${esc(l)}</span>`).join('')}</div>`;
+  return sec('Email send timeline', 'last 8 weeks, one mark per email',
+    key + `<div class="tbl-wrap"><table class="scores tl"><thead><tr><th>Sender</th>${head}</tr></thead><tbody>${body}</tbody></table></div>
+    <p class="fine">Columns are weeks starting Monday. Hover a mark for the date, type and subject. An empty row under "Sign-up pending" or "No list" is unknown, not a quiet sender.</p>`);
+}
+
+function mailLog(ctx, rows){
+  const label = Object.fromEntries(rows.map(r => [r.id, r]));
+  const list = (ctx.emails || []).filter(e => label[e.competitor_id]).slice(0, 60);
+  if(!list.length) return sec('Email log', '', empty('No emails received yet.'));
+  const body = list.map(e => { const r = label[e.competitor_id], pr = pricesOf(e.prices);
+    return `<tr><td class="n">${esc(fmtDate(e.observed_at))}</td><td class="nm"><span class="sw" style="background:${r.color}"></span>${esc(r.label)}</td>
+      <td>${esc(e.subject || '—')}</td><td><i class="md k-${mailKind(e)}"></i> ${esc(mailTypes(e).join(', ') || 'email')}</td>
+      <td class="n">${pr.length ? esc([...new Set(pr)].map(money).join(', ')) : '—'}</td></tr>`; }).join('');
+  return sec('Email log', `${list.length} emails, newest first`,
+    `<div class="tbl-wrap"><table class="scores"><thead><tr><th>Received</th><th>Sender</th><th>Subject</th><th>Type</th><th>Prices named</th></tr></thead><tbody>${body}</tbody></table></div>`);
+}
+
+function ownedPanel(ctx, sections){
+  const rows = ownedRows(ctx);
+  return ownedSnapshot(ctx, rows)
+    + `<h2 class="grp-h">Website</h2>` + pageWatch(ctx, rows) + priceBoard(ctx)
+    + itemsBlock('website_changes', 'Website changes in this briefing', sections.website_changes)
+    + `<h2 class="grp-h">Email</h2>` + mailTimeline(ctx, rows) + mailLog(ctx, rows)
+    + itemsBlock('email_programs', 'Email programs in this briefing', sections.email_programs);
+}
+
 const REC_TITLE = { search:'Search recommendations', paid:'Paid media recommendations',
   social:'Social content recommendations', owned:'Owned channel recommendations' };
 function recsBlock(id, items){
@@ -1430,7 +1605,7 @@ function briefingPanel(id, b){
   if(id === 'search') return keywordGrid(ctx) + trendsBlock(ctx) + notes + recs;
   if(id === 'paid') return paidCharts(ctx) + notes + recs;
   if(id === 'social') return socialCharts(ctx) + notes + recs;
-  if(id === 'owned') return notes + recs;
+  if(id === 'owned') return ownedPanel(ctx, sections) + recs;
   if(id === 'key') return keyPanel();
   return empty('Nothing to show here yet.');
 }

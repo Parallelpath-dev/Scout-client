@@ -138,6 +138,16 @@ def prices_in(text: str) -> list[str]:
     return out
 
 
+def page_prices(content: dict[str, Any] | None) -> list[str]:
+    """Every distinct price on a page, low to high, read from the same fields and with
+    the same noise stripped as the change check, so the price board and a reported
+    price change can never disagree about what the page says."""
+    if not content:
+        return []
+    blob = _denoise(" ".join(_flatten(content.get(f)) for f in COMPARED_FIELDS))
+    return sorted(set(prices_in(blob)), key=float)
+
+
 @dataclass
 class ChangeVerdict:
     changed: bool = False

@@ -52,7 +52,7 @@ from typing import Any
 import requests
 
 from geo import GeoClassifier
-from web_change import classify_change, should_surface, surface_rank
+from web_change import classify_change, page_prices, should_surface, surface_rank
 from supa import Supa, only
 
 NAV_TIMEOUT_MS = 30_000
@@ -248,7 +248,10 @@ def main() -> int:
             "geo_relevance": g.relevance, "geo_evidence": g.evidence,
             "signal_type": "page_snapshot", "external_ref": ref,
             "week_of": target_week.isoformat(),
-            "data": {"url": url, "label": ch.get("location_label"), "content": content},
+            # prices: every price on the page this week, so the dashboard can show
+            # what a prospect sees today and not only the weeks a price moved.
+            "data": {"url": url, "label": ch.get("location_label"), "content": content,
+                     "prices": page_prices(content)},
             "source_url": url, "collected_at": collected_at,
         })
 

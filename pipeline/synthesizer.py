@@ -591,8 +591,11 @@ or data that are not in the developments or the tab findings.
 Hard rules:
 1. One action per development, specific enough to brief someone on Monday.
    Tab recommendations: zero to three per tab, each built on that tab's findings and
-   citing the refs of the findings it rests on, copied exactly. A tab with nothing
-   worth acting on gets an empty list. Never repeat a development's recommendation.
+   citing the refs of the findings it rests on, copied exactly. A tab whose findings
+   include a price change, an offer, an opening or a new promotion gets at least one
+   recommendation. A tab with no findings gets an empty list. Never repeat a
+   development's recommendation. Never assume facts about the client's own lists,
+   systems, data or plans that the client context does not state.
 2. Respect the client context. Where it marks something inferred or assumed, label any
    recommendation resting on it as inference.
 3. Anything the client context says is raised on a call and never in writing stays out
@@ -1198,7 +1201,10 @@ def load(sb: Supa, slug: str, wk: date) -> dict[str, Any]:
     # (a sign-up that never confirmed) stays unknown, never zero.
     delivered = sb.get("portal", "inbound_emails", {
         "competitor_id": f"in.({comp_ids})", "match_status": "eq.matched",
-        "sent_at": f"lt.{wk.isoformat()}",
+        # received_at, never sent_at: every row has a receipt time, while sent_at is
+        # empty whenever the provider passes no Date header, and a list whose first mail
+        # had none would otherwise never count as live.
+        "received_at": f"lt.{wk.isoformat()}",
         "select": "competitor_id,received_at", "order": "received_at.asc"})
     live_email = {r["competitor_id"] for r in delivered if r.get("competitor_id")}
     first_mail = min((str(r["received_at"])[:10] for r in delivered), default=None)

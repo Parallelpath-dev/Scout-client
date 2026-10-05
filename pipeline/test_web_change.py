@@ -203,6 +203,13 @@ check(
 )
 
 
+# ── the price board reads every price on the page ───────────────────────────
+from web_change import page_prices
+check("page prices are distinct, low to high, and $87.00 equals $87",
+      page_prices(snap(body="Join for $1. Monthly $87.00, or $87 with autopay. Annual $1,249.")),
+      ["1", "87", "1249"])
+check("an empty page has no prices", page_prices(None), [])
+
 if FAILS:
     print(f"FAIL — {len(FAILS)} of the checks did not pass:\n")
     for f in FAILS:
