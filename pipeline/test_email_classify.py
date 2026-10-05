@@ -109,6 +109,24 @@ check("an opt-in confirmation is recognised", v.headline_type, CONFIRMATION)
 check("and is noise despite the free pass language", v.materiality, NOISE)
 check("and never surfaces", should_surface(v), False)
 
+v = classify_email(
+    subject="You're in!",
+    text_body="Thanks for joining the list. You're in! Watch for news from the gym.",
+    competitor_domain="sportrock.com",
+    single_market=True,
+)
+check("a 'You're in!' welcome is still a confirmation", v.headline_type, CONFIRMATION)
+
+v = classify_email(
+    subject="Columbia Heights founding memberships now available",
+    text_body="Founding memberships are open. Once you're in, every class and the sauna "
+    "are included. Lock in the founding rate of $89 a month before we open.",
+    competitor_domain="boulderingproject.com",
+    single_market=False,
+)
+check("'once you're in' in marketing copy is not a confirmation",
+      v.headline_type != CONFIRMATION, True)
+
 
 # ── offers ────────────────────────────────────────────────────────────────────
 

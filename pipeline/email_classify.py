@@ -74,7 +74,9 @@ CONFIRMATION_TERMS = re.compile(
     r"(confirm (?:your )?(?:subscription|email|signup|sign[- ]up)|"
     r"verify your email|"
     r"please confirm|"
-    r"you(?:'| a)?re (?:almost |nearly )?(?:in|subscribed|on the list)|"
+    # "You're in!" closes a welcome. "Once you're in, the sauna is yours" is marketing,
+    # so a bare "you're in" counts only when it ends the sentence.
+    r"you(?:'|\u2019| a)?re (?:almost |nearly )?(?:in(?=\s*[!.]|\s*$)|subscribed|on the list)|"
     r"click (?:the link )?(?:below )?to confirm|"
     r"thanks? for (?:subscribing|signing up)(?=.{0,80}confirm))",
     re.I,
