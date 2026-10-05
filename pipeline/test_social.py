@@ -187,6 +187,32 @@ def test_age_restricted_profile_is_unknown_not_zero():
     assert sp.item_error({"noResults": True, "error": "x"}) is None, "X noResults is a real zero"
 
 
+def test_quiet_week_replies_are_zero_not_unknown():
+    # 28 Sep: every YouTube channel and three Facebook pages read as unknown because the
+    # actors answer a quiet week with an error-shaped item.
+    yt_items = [{"error": "DATE_FILTER_TOO_STRICT",
+                 "url": "https://www.youtube.com/channel/UCykbSnimHBWsvq-ndDkCzpQ/videos"},
+                {"error": "CHANNEL_HAS_NO_SHORTS",
+                 "url": "https://www.youtube.com/channel/UCykbSnimHBWsvq-ndDkCzpQ/about"}]
+    fb_items = [{"inputUrl": "https://www.facebook.com/YMCABowen", "error": "no_items",
+                 "errorDescription": "Empty or private data for provided input"}]
+    assert sp.item_error(yt_items[0]) is None and sp.is_empty_window(yt_items[1])
+    def fake(token, actor, payload, **k):
+        return yt_items if "youtube" in actor else fb_items
+    real = cs.apify.run_actor
+    cs.apify.run_actor = fake
+    try:
+        _, known, _, _ = cs.collect("t", [CH["yt"], CH["fb"]], WK, known_readable={"ch-fb"})
+        _, unknown, _, _ = cs.collect("t", [CH["fb"]], WK, known_readable=set())
+    finally:
+        cs.apify.run_actor = real
+    assert CH["yt"] in known, "a quiet YouTube week is a zero"
+    assert CH["fb"] in known, "an empty read of a page we have read before is a zero"
+    assert CH["fb"] not in unknown, "a page never read might be private: unknown, not zero"
+    _, prof = rows({})
+    assert all(r["data"]["posts_in_week"] == 0 for r in prof)
+
+
 def test_zero_posts_still_writes_a_profile():
     p, prof = rows({"tt": [{"id": "9", "createTimeISO": "2024-07-01T00:00:00Z",
                             "authorMeta": {"name": "onelifefit", "fans": 1818}}]})

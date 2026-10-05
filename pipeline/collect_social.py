@@ -182,7 +182,8 @@ def build_rows(
     return post_rows, profile_rows
 
 
-def collect(token: str, channels: list[sp.Channel], wk, weeks: int = 1) -> tuple[
+def collect(token: str, channels: list[sp.Channel], wk, weeks: int = 1,
+            known_readable: set[str] | None = None) -> tuple[
         dict[str, list[sp.Post]], list[sp.Channel], dict[str, int], dict[str, int]]:
     by_platform: dict[str, list[sp.Channel]] = defaultdict(list)
     for c in channels:
@@ -213,10 +214,15 @@ def collect(token: str, channels: list[sp.Channel], wk, weeks: int = 1) -> tuple
         norm = sp.NORMALIZE[platform]
         unmatched = 0
         failed: dict[str, str] = {}
+        known = known_readable or set()
         for it in items:
+            if sp.is_empty_window(it):
+                continue          # read fine, nothing in the window: a zero
             err = sp.item_error(it)
             if err:
                 ch = sp.match_error(it, chans)
+                if ch and sp.error_code(it) in sp.EMPTY_IF_KNOWN and ch.id in known:
+                    continue      # a page we have read before, quiet this week
                 if ch:
                     failed[ch.id] = err
                 continue
@@ -281,7 +287,14 @@ def main() -> int:
         return 2
 
     weeks = 1 + max(0, args.backfill_weeks)
-    posts, collected, followers, returned = collect(token, channels, wk, weeks)
+    # Channels we have read before: proof a page is public, so an empty read is a quiet
+    # week there and not a private page.
+    ids = ",".join(c.id for c in channels)
+    seen = sb.get("portal", "signals", {
+        "channel_id": f"in.({ids})", "signal_type": "eq.social_post",
+        "select": "channel_id", "limit": "10000"}) if ids else []
+    known_readable = {r["channel_id"] for r in seen}
+    posts, collected, followers, returned = collect(token, channels, wk, weeks, known_readable)
     clf = GeoClassifier()
     post_rows, profile_rows = build_rows(posts, collected, followers, competitors,
                                          client["id"], wk, returned, clf,

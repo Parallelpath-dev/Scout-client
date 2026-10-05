@@ -295,6 +295,24 @@ def match(post: Post, channels: list[Channel]) -> Channel | None:
     return None
 
 
+# Actor codes that mean "read the channel fine, nothing in the date window". A zero, not
+# a failure: YouTube reports a quiet week as DATE_FILTER_TOO_STRICT and a channel that
+# never posts Shorts as CHANNEL_HAS_NO_SHORTS. Treated as failures, every quiet YouTube
+# channel read as unknown and dropped its competitor's social score (28 Sep).
+EMPTY_WINDOW = {"DATE_FILTER_TOO_STRICT", "CHANNEL_HAS_NO_SHORTS"}
+# Facebook says no_items for both "no posts in range" and "private". A page we have read
+# before is not private, so there it is a quiet week; a page never read stays unknown.
+EMPTY_IF_KNOWN = {"no_items"}
+
+
+def error_code(i: dict[str, Any]) -> str:
+    return str(i.get("error") or "")
+
+
+def is_empty_window(i: dict[str, Any]) -> bool:
+    return error_code(i) in EMPTY_WINDOW
+
+
 def item_error(i: dict[str, Any]) -> str | None:
     """An actor's own "could not read this" item. Not a post, and not a zero: the
     channel was not collected. Instagram age-gates some accounts (YMCA Anthony Bowen:
@@ -302,6 +320,8 @@ def item_error(i: dict[str, Any]) -> str | None:
     silently recorded 13 weeks of "posted nothing" for an account posting weekly."""
     if i.get("isRestrictedProfile"):
         return str(i.get("restrictionReason") or i.get("error") or "restricted profile")
+    if is_empty_window(i):
+        return None
     if i.get("error") and not i.get("noResults"):
         return str(i.get("errorDescription") or i.get("error"))
     return None
