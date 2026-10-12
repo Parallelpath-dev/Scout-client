@@ -13,10 +13,14 @@ name: Portal synthesize
 #
 # A failed validation writes the row HELD (published_at = NULL, invisible to the client)
 # and exits 1, which turns this run red. That red run is the alert.
+#
+# WHO STARTS IT: Supabase pg_cron dispatches this at 10:00 Chicago time Monday, only
+# once the collectors have written the week, and once more at 12:00 if no briefing
+# row exists for the week (a HELD row counts as existing, so a
+# failed validation is never retried into a second model run). See
+# migrations/018 and 019. No `schedule:` here on purpose.
 
 on:
-  schedule:
-    - cron: '0 15 * * 1'
   workflow_dispatch:
     inputs:
       client_slug:
