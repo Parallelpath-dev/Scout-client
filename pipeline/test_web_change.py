@@ -209,6 +209,10 @@ check("page prices are distinct, low to high, and $87.00 equals $87",
       page_prices(snap(body="Join for $1. Monthly $87.00, or $87 with autopay. Annual $1,249.")),
       ["1", "87", "1249"])
 check("an empty page has no prices", page_prices(None), [])
+check("'$1M+ of equipment' is not a $1 price",
+      page_prices(snap(body="$1M+ of Strength and Cardio Equipment. Join for $29 a month.")), ["29"])
+check("'$2 million' and '$5K' are not prices either",
+      page_prices(snap(body="A $2 million renovation, $5K in prizes, $1 enrollment.")), ["1"])
 
 if FAILS:
     print(f"FAIL — {len(FAILS)} of the checks did not pass:\n")
