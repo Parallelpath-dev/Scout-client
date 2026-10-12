@@ -8,12 +8,15 @@ name: Portal weekly
 # a week by exactly one codebase. Changing a cap, adding a competitor or retiring a
 # channel is a change in this repo and nothing else.
 #
-# Monday 08:00 UTC is chosen for no reason other than being Monday morning. There is
-# no ordering constraint to respect.
+# Monday 08:45 Chicago time.
+#
+# WHO STARTS IT: Supabase, not GitHub. GitHub's own `schedule:` trigger stopped firing
+# for this repo (28 Sep, 5 Oct, 12 Oct), so pg_cron sends the same workflow_dispatch a
+# manual run sends, at 08:45 Chicago time, and re-sends it once at 10:45 if no ads or
+# page checks landed. See migrations/018 and 019. There is deliberately
+# no `schedule:` here: two clocks would run the week twice.
 
 on:
-  schedule:
-    - cron: '0 8 * * 1'
   workflow_dispatch:
     inputs:
       client_slug:
