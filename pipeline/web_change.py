@@ -55,7 +55,10 @@ COSMETIC_ONLY = "cosmetic"
 # A money figure: $124, $124.00, $1,249. Deliberately not matching a bare number —
 # "15 days" and "2026" are not prices, and an unanchored number match makes every page
 # look like it repriced every week.
-MONEY = re.compile(r"\$\s?(\d{1,3}(?:,\d{3})*(?:\.\d{2})?)")
+# A price, not a size claim: "$1M+ of equipment" or "$2 billion" is not a $1 or $2 rate.
+MONEY = re.compile(
+    r"\$\s?(\d{1,3}(?:,\d{3})*(?:\.\d{2})?)"
+    r"(?!\d|[.,]\d|\s?(?:[MmKkBb]\b|[MmKkBb]\+|million|billion|thousand|mm\b))")
 
 # Offer language. These are what a promo looks like in the wild across all five of
 # these brands' pages, gathered from their live copy rather than imagined.
