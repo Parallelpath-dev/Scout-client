@@ -507,6 +507,14 @@ def test_promotions_get_channel_and_dates_from_their_signals():
     assert p["first_seen"] == "2026-09-18" and p["last_seen"] == "2026-09-21"
 
 
+def test_email_dated_by_when_it_arrived_not_the_run():
+    # 2 Nov 2026: emails carry no received_at, so every promotion read as first seen on
+    # the Monday the collector ran.
+    sig = {"signal_type": "email", "observed_at": "2026-10-27T14:59:27+00:00",
+           "collected_at": "2026-11-02T13:50:00+00:00", "data": {"subject": "50% off"}}
+    assert sy._seen(sig) == "2026-10-27"
+
+
 def test_client_row_stays_out_of_pressure_and_digest():
     me = {"id": "c-bp", "name": "Bouldering Project", "single_market": False, "is_client": True}
     mine = [sig("bp1", "ad_active", "c-bp", scope="local",

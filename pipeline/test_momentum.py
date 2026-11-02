@@ -122,6 +122,45 @@ def test_events_and_watch_terms():
     assert m["loc"]["metrics"]["email"] == 0.0, "confirmations are not pressure"
 
 
+def test_offer_ending_is_not_a_price_event():
+    # Onelife Tenleytown, 2 Nov 2026: the $1 and $55 Halloween prices came off and the
+    # page went back to exactly its October list. A page change, not a price cut.
+    revert = {"id": "r", "signal_type": "web_change", "competitor_id": "loc",
+              "geo_relevance": "dc_explicit",
+              "data": {"surfaces": True, "materiality": "material", "applies_locally": "yes",
+                       "change_types": ["price"],
+                       "evidence": ["price: removed $1, $55; added $29, $79"],
+                       "price_before": ["1", "55", "59", "69", "99", "109", "199"],
+                       "price_after": ["29", "59", "69", "79", "99", "109", "199"]}}
+    cut = dict(revert, id="c", data=dict(revert["data"],
+               price_before=["29", "59", "69", "79", "99", "109", "199"],
+               price_after=["1", "55", "59", "69", "99", "109", "199"]))
+    m = metrics([revert])["loc"]
+    assert m["events"] == [] and m["metrics"]["web"] == 3.0, "still a page change, no event"
+    assert [e["kind"] for e in metrics([cut])["loc"]["events"]] == ["price"], "$1 is a cut"
+    assert not mo.price_dropped({"price_before": ["89"], "price_after": ["99"]}), "a rise"
+    assert mo.price_dropped({"price_before": ["99"], "price_after": ["89"]}), "a tier cut"
+
+
+def test_one_promotion_counts_once():
+    def email(i, subject, prices=None):
+        return {"id": i, "signal_type": "email", "competitor_id": "loc", "geo_relevance": "none",
+                "data": {"email_type": "offer", "materiality": "material", "subject": subject,
+                         "prices": prices or []}}
+    page = {"id": "p", "signal_type": "web_change", "competitor_id": "loc",
+            "geo_relevance": "dc_explicit",
+            "data": {"surfaces": True, "materiality": "material", "applies_locally": "yes",
+                     "change_types": ["price", "offer"], "evidence": ["offer: $1 enrollment"],
+                     "price_before": ["29", "79"], "price_after": ["1", "55"]}}
+    s = [page,
+         email("a", "Join Today for $9 and Get 50% Off Your First Month!"),
+         email("b", "50% off your first month!!", ["19"]),
+         email("c", "More Than a Gym. Join for $1 Enrollment!")]
+    ev = metrics(s)["loc"]["events"]
+    assert len(ev) == 2, ev
+    assert [e["promo"] for e in ev] == ["$1", "50%"], "the page's $1 and the $1 email are one"
+
+
 def history(value, weeks=8):
     return [{"ads_active": value, "ads_launched": 2.0} for _ in range(weeks)]
 

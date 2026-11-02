@@ -87,6 +87,85 @@ FLOORS = {
 EVENT_POINTS = {"watch_term": 20, "location": 15, "price": 10, "offer": 10}
 EVENT_CAP = 30
 
+_PCT = re.compile(r"(\d{1,3})\s?%")
+_DOLLAR = re.compile(r"\$\s?(\d[\d,]*(?:\.\d{1,2})?)")
+
+
+def _amount(v: Any) -> float | None:
+    try:
+        return float(str(v).replace(",", "").replace("$", "").strip())
+    except ValueError:
+        return None
+
+
+def price_dropped(d: dict[str, Any]) -> bool:
+    """Did this page change put a lower price in front of a prospect?
+
+    An offer ending is a page change, not pressure: on 2 Nov 2026 Onelife Tenleytown
+    dropped its $1 and $55 Halloween prices and went back to exactly its October list
+    ($29, $79 ...), and that scored as a price event. A price event needs an added price
+    below the lowest one it replaced (or, with nothing removed, below the page's old
+    lowest). Without before/after prices (older signals) the event counts as before.
+    """
+    before = {a for a in (_amount(x) for x in d.get("price_before") or []) if a is not None}
+    after = {a for a in (_amount(x) for x in d.get("price_after") or []) if a is not None}
+    if not before and not after:
+        return True
+    added, removed = after - before, before - after
+    if not added:
+        return False
+    floor = min(removed) if removed else (min(before) if before else None)
+    return floor is None or min(added) < floor
+
+
+def offer_key(text: str, prices: list[Any] | None = None) -> str:
+    """Which promotion an offer is, so one promotion counts once across channels.
+
+    The headline number names it: a percentage if there is one ("50% off your first
+    month" and "$9 and get 50% off" are one promotion), else the lowest dollar amount
+    ("$1 enrollment" by email and "$1" on the page are one promotion).
+    """
+    text = text or ""
+    pct = _PCT.search(text)
+    if pct:
+        return f"{int(pct.group(1))}%"
+    amts = [a for a in (_amount(x) for x in _DOLLAR.findall(text)) if a is not None]
+    if not amts:
+        amts = [a for a in (_amount(x) for x in prices or []) if a is not None]
+    if amts:
+        return f"${min(amts):g}"
+    return _WS.sub(" ", text).strip().lower()[:80]
+
+
+def dedupe_events(events: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """One promotion event per signal, and one per promotion across channels.
+
+    On 26 Oct 2026 one Onelife page change scored as both a price and an offer event,
+    and one promotion sent as two emails scored twice: 40 points for one push. A
+    signal keeps one price-or-offer event, and price and offer events that name the same
+    promotion keep the first. Watch terms and locations are not promotions and stay.
+    """
+    promo_kinds = ("price", "offer")
+    best: dict[Any, dict[str, Any]] = {}
+    order: list[Any] = []
+    for i, e in enumerate(events):
+        key = e.get("signal_id") if e["kind"] in promo_kinds else ("other", i)
+        if key not in best:
+            order.append(key)
+            best[key] = e
+        elif e["points"] > best[key]["points"]:
+            best[key] = e
+    out, promos = [], set()
+    for key in order:
+        e = best[key]
+        k = e.get("promo")
+        if e["kind"] in promo_kinds and k:
+            if k in promos:
+                continue
+            promos.add(k)
+        out.append(e)
+    return out
+
 
 def _date(v: Any) -> date | None:
     if not v:
@@ -153,9 +232,13 @@ def week_metrics(
         m = out[cid]["metrics"]
         m[k] = round(m.get(k, 0.0) + v, 3)
 
-    def event(cid: str, kind: str, s: dict[str, Any], note: str) -> None:
-        out[cid]["events"].append({"kind": kind, "points": EVENT_POINTS[kind],
-                                   "signal_id": s["id"], "note": note[:160]})
+    def event(cid: str, kind: str, s: dict[str, Any], note: str,
+              promo: str | None = None) -> None:
+        e = {"kind": kind, "points": EVENT_POINTS[kind], "signal_id": s["id"],
+             "note": note[:160]}
+        if promo:
+            e["promo"] = promo
+        out[cid]["events"].append(e)
 
     for s in signals:
         cid = s.get("competitor_id")
@@ -186,10 +269,14 @@ def week_metrics(
             add(cid, "web", 0.0 if elsewhere else
                 pts * APPLIES_WEIGHT.get(d.get("applies_locally") or "yes", 1.0))
             types = set() if elsewhere else set(d.get("change_types") or [])
-            if "price" in types:
-                event(cid, "price", s, "; ".join(d.get("evidence") or [])[:160])
+            ev_text = "; ".join(d.get("evidence") or [])
+            if "price" in types and price_dropped(d):
+                after = {_amount(x) for x in d.get("price_after") or []}
+                new = sorted(a for a in after - {_amount(x) for x in d.get("price_before") or []}
+                             if a is not None)
+                event(cid, "price", s, ev_text[:160], f"${new[0]:g}" if new else None)
             if "offer" in types:
-                event(cid, "offer", s, "; ".join(d.get("evidence") or [])[:160])
+                event(cid, "offer", s, ev_text[:160], offer_key(ev_text))
             if "location" in types:
                 event(cid, "location", s, "; ".join(d.get("evidence") or [])[:160])
 
@@ -201,7 +288,8 @@ def week_metrics(
             add(cid, "email", 0.0 if elsewhere else
                 MATERIALITY_POINTS.get(d.get("materiality"), 1.0) * w)
             if not elsewhere and kind == "offer":
-                event(cid, "offer", s, d.get("subject") or "offer email")
+                event(cid, "offer", s, d.get("subject") or "offer email",
+                      offer_key(d.get("subject") or "", d.get("prices")))
             if not elsewhere and kind == "opening":
                 event(cid, "location", s, d.get("subject") or "opening email")
 
@@ -239,6 +327,9 @@ def week_metrics(
     for cid, msgs in launched.items():
         if msgs:
             add(cid, "ads_launched", sum(msgs.values()))
+
+    for cid in comp:
+        out[cid]["events"] = dedupe_events(out[cid]["events"])
 
     # A collector that ran and found nothing is a real zero. A collector that did not
     # run, or a channel that does not exist, is unknown and must not drag a median down.

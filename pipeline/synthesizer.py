@@ -951,7 +951,10 @@ CHANNEL_OF = {"ad_active": "paid", "social_post": "social", "social_profile": "s
 
 def _seen(sig: dict[str, Any]) -> str | None:
     d = sig.get("data") or {}
-    v = d.get("start_date") or d.get("posted_at") or d.get("received_at") or sig.get("collected_at")
+    # observed_at before collected_at: emails carry no received_at, and falling back to
+    # the Monday they were collected dated every promotion to the run day.
+    v = (d.get("start_date") or d.get("posted_at") or d.get("received_at")
+         or sig.get("observed_at") or sig.get("collected_at"))
     return str(v)[:10] if v else None
 
 
