@@ -161,6 +161,23 @@ def test_one_promotion_counts_once():
     assert [e["promo"] for e in ev] == ["$1", "50%"], "the page's $1 and the $1 email are one"
 
 
+def test_bare_free_on_a_page_is_not_an_event():
+    page = {"id": "f", "signal_type": "web_change", "competitor_id": "loc",
+            "geo_relevance": "dc_landing",
+            "data": {"surfaces": True, "materiality": "material", "applies_locally": "yes",
+                     "change_types": ["offer"], "evidence": ['offer: "free"'],
+                     "price_before": [], "price_after": []}}
+    m = metrics([page])["loc"]
+    assert m["events"] == [] and m["metrics"]["web"] == 3.0, "a page change, no event"
+    pct = dict(page, data=dict(page["data"], evidence=['offer: "50% off first month"']))
+    assert [e["kind"] for e in metrics([pct])["loc"]["events"]] == ["offer"]
+
+
+def test_one_page_change_is_one_usual_swing():
+    z = cal.robust_z(3.0, [0.0, 0.0, 3.0, 0.0, 0.0, 6.0], min_history=1, **mo.FLOORS["web"])
+    assert z == 1.0, z
+
+
 def history(value, weeks=8):
     return [{"ads_active": value, "ads_launched": 2.0} for _ in range(weeks)]
 

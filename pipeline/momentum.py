@@ -78,7 +78,10 @@ METRIC_WEIGHT = {
 FLOORS = {
     "ads_active": dict(abs_floor=2.0, rel_floor=0.10),
     "ads_launched": dict(abs_floor=1.0, rel_floor=0.25),
-    "web": dict(abs_floor=1.0),
+    # One material change (3 points) is one usual swing. Most pages change in few weeks,
+    # so the median is 0 and the spread collapses to the floor: at 1.0 a single change
+    # read as an extreme week (z capped at 3) on 26 Oct, 2 Nov and 9 Nov 2026.
+    "web": dict(abs_floor=3.0),
     "email": dict(abs_floor=1.0, rel_floor=0.25),
     "search": dict(abs_floor=3.0, rel_floor=0.10),
     "social_posts": dict(abs_floor=1.0, rel_floor=0.25),
@@ -275,8 +278,12 @@ def week_metrics(
                 new = sorted(a for a in after - {_amount(x) for x in d.get("price_before") or []}
                              if a is not None)
                 event(cid, "price", s, ev_text[:160], f"${new[0]:g}" if new else None)
-            if "offer" in types:
-                event(cid, "offer", s, ev_text[:160], offer_key(ev_text))
+            # A page offer is an event only when it names a number. The detector also
+            # fires on the bare word "free" (Onelife's DC gyms page, 9 Nov 2026), which
+            # is site furniture for a brand that has advertised free passes for months.
+            key = offer_key(ev_text)
+            if "offer" in types and (key.startswith("$") or key.endswith("%")):
+                event(cid, "offer", s, ev_text[:160], key)
             if "location" in types:
                 event(cid, "location", s, "; ".join(d.get("evidence") or [])[:160])
 
